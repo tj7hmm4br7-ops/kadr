@@ -1919,6 +1919,7 @@ async function resolve([title, year, imdbId, ruTitle, tmdbId]) {
   const ck = tmdbId ? "t" + tmdbId : imdbId || (ruTitle ? "kp|" + ruTitle + "|" + year : title + "|" + year);
   await dataReady;
   if (cache[ck]) return cache[ck];
+  if (localData && !tmdbId) return null; // фильма нет в собранных данных — в TMDB не ходим
   let m;
   if (tmdbId) {
     const d = await tmdb(`/movie/${tmdbId}`, { language: "ru-RU" });
