@@ -1871,13 +1871,31 @@ let roundRnd = Math.random;
 
 async function tmdb(path, params = {}) {
   const q = new URLSearchParams({ api_key: key, ...params });
-  const r = await fetch(`${API}${path}?${q}`);
+  let r;
+  try { r = await fetch(`${API}${path}?${q}`); }
+  catch (e) { throw new Error("Не получилось загрузить фильм. Проверь интернет и обнови страницу"); }
   if (!r.ok) throw new Error(r.status === 401 ? "TMDB не принял ключ сайта" : "Ошибка TMDB " + r.status);
   return r.json();
 }
 
 // Находим фильм в TMDB: по IMDb ID (точно) или по названию и году
 let cache = store.get("films6") || {};
+// Данные и кадры лежат на самом сайте (их собирает GitHub), поэтому TMDB игроку не нужен —
+// важно для России, где TMDB часто недоступен без VPN. Если файла нет, работаем через TMDB как раньше
+let localData = false;
+const dataReady = fetch("data/films.json", { cache: "no-cache" })
+  .then(r => r.ok ? r.json() : null)
+  .then(d => { if (d && d.films) { Object.assign(cache, d.films); localData = true; } })
+  .catch(() => {});
+// Кадры фильма: свои с сайта или (запасной вариант) с TMDB
+async function framesOf(f, max) {
+  if (Array.isArray(f.frames)) return [...f.frames]; // свои кадры (бывает 0 — тогда фильм пропускается)
+  const imgs = await tmdb(`/movie/${f.id}/images`, { include_image_language: "null" });
+  let all = imgs.backdrops.map(b => b.file_path);
+  if (all.length > max) all = all.filter(p => p !== f.bd);
+  return all;
+}
+const isLocal = p => typeof p === "string" && p.startsWith("img/");
 // ===== Оценки агрегаторов (по порядку списков, собраны 10.11.2026) =====
 const RATINGS = {"kinopoisk":[8.3,8.2,8.2,8.1,8.1,8.1,8.1,8.1,8.1,8.0,8.0,8.0,8.0,8.0,7.9,7.9,7.9,7.8,7.8,7.8,7.8,7.8,7.8,7.8,7.8,7.8,7.8,7.8,7.8,7.8,7.7,7.7,7.7,7.7,7.7,7.7,7.7,7.7,7.7,7.7,7.7,7.7,7.7,7.7,7.6,7.6,7.6,7.6,7.6,7.6,7.6,7.6,7.6,7.6,7.6,7.6,7.6,7.5,7.5,7.5,7.5,7.5,7.5,7.5,7.5,7.5,7.5,7.5,7.5,7.5,7.5,7.5,7.5,7.5,7.5,7.5,7.5,7.5,7.5,7.5,7.5,7.5,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2],"imdb":[9.3,9.2,9.1,9.0,9.0,9.0,9.0,8.9,8.8,8.8,8.8,8.8,8.8,8.8,8.7,8.7,8.7,8.7,8.6,8.6,8.6,8.6,8.6,8.6,8.6,8.6,8.6,8.6,8.5,8.6,8.6,8.5,8.5,8.7,8.5,8.5,8.6,8.5,8.5,8.5,8.5,8.5,8.5,8.5,8.5,8.5,8.5,8.5,8.5,8.5,8.4,8.4,8.5,8.5,8.4,8.5,8.4,8.4,8.4,8.4,8.4,8.4,8.4,8.4,8.4,8.4,8.4,8.4,8.4,8.4,8.4,8.4,8.7,8.4,8.4,8.4,8.3,8.4,8.4,8.4,8.4,8.3,8.3,8.3,8.3,8.3,8.9,8.3,8.4,8.3,8.3,8.3,8.3,8.3,8.3,8.3,8.3,8.3,8.3,8.3,8.3,8.3,8.3,8.3,8.3,8.2,8.3,8.3,8.3,8.2,8.2,8.3,8.3,8.2,8.3,8.2,8.2,8.2,8.2,8.2,8.2,8.2,8.2,8.2,8.2,8.2,8.2,8.2,8.2,8.2,8.2,8.3,8.2,8.3,8.2,8.4,8.2,8.2,8.2,8.2,8.3,8.2,8.2,8.2,8.2,8.2,8.2,8.2,8.2,8.2,8.2,8.2,8.2,8.2,8.2,8.2,8.2,8.2,8.2,8.2,8.2,8.2,8.2,8.2,8.3,8.2,8.1,8.1,8.2,8.2,8.1,8.1,8.1,8.1,8.1,8.1,8.1,8.4,8.1,8.1,8.1,8.1,8.1,8.1,8.1,8.1,8.1,8.1,8.1,8.1,8.2,8.1,8.1,8.1,8.1,8.1,8.1,8.1,8.1,8.1,8.1,8.1,8.1,8.1,8.1,8.3,8.1,8.1,8.1,8.2,8.1,8.1,8.1,8.1,8.1,8.1,8.1,8.1,8.1,8.1,8.3,8.1,8.6,8.1,8.1,8.1,8.1,8.1,8.1,8.1,8.1,8.0,8.1,8.1,8.1,8.1,8.1,8.1,8.1,8.0,8.1,8.1,8.1,8.1,8.1,8.2,8.2,8.1,8.2,8.3],"letterboxd":[4.68,4.66,4.63,4.61,4.6,4.61,4.59,4.6,4.58,4.58,4.53,4.56,4.55,4.51,4.51,4.52,4.51,4.51,4.5,4.49,4.5,4.52,4.5,4.5,4.48,4.49,4.48,4.45,4.46,4.46,4.46,4.45,4.43,4.48,4.44,4.43,4.46,4.43,4.43,4.46,4.44,4.47,4.43,4.42,4.42,4.44,4.4,4.45,4.42,4.43,4.4,4.42,4.4,4.4,4.41,4.39,4.42,4.39,4.42,4.41,4.38,4.39,4.4,4.39,4.4,4.42,4.42,4.39,4.42,4.34,4.37,4.4,4.39,4.37,4.39,4.39,4.37,4.37,4.36,4.41,4.36,4.39,4.36,4.36,4.36,4.39,4.41,4.36,4.4,4.36,4.36,4.39,4.37,4.38,4.39,4.36,4.31,4.37,4.35,4.36,4.33,4.36,4.37,4.35,4.42,4.37,4.38,4.34,4.36,4.35,4.37,4.34,4.37,4.34,4.34,4.33,4.32,4.35,4.36,4.34,4.34,4.35,4.31,4.32,4.33,4.31,4.35,4.41,4.33,4.32,4.32,4.31,4.32,4.33,4.35,4.31,4.33,4.32,4.35,4.32,4.3,4.32,4.3,4.32,4.31,4.32,4.31,4.3,4.32,4.29,4.36,4.3,4.29,4.29,4.31,4.3,4.3,4.3,4.3,4.3,4.33,4.28,4.3,4.01,4.3,4.28,4.27,4.28,4.3,4.29,4.3,4.3,4.32,4.26,4.11,4.29,4.28,4.29,4.29,4.3,4.29,4.27,4.26,4.27,4.28,4.25,4.34,4.28,4.29,4.22,4.29,4.3,4.26,4.27,4.27,4.28,4.31,4.31,4.28,4.25,4.27,4.28,4.27,4.26,4.3,4.28,4.26,4.25,4.24,4.26,4.27,4.27,4.27,4.23,4.26,4.25,4.3,4.26,4.26,4.26,4.23,4.28,4.24,4.24,4.23,4.26,4.25,4.24,4.23,4.25,4.25,4.26,4.24,4.24,4.24,4.25,4.24,4.25,4.25,4.24,4.24,4.26,4.25,4.27,4.22,4.24,4.24,4.24,4.25,4.23]};
 // Как показывать оценку каждого сайта
@@ -1899,6 +1917,7 @@ function pickBest(results, year, query) {
 }
 async function resolve([title, year, imdbId, ruTitle, tmdbId]) {
   const ck = tmdbId ? "t" + tmdbId : imdbId || (ruTitle ? "kp|" + ruTitle + "|" + year : title + "|" + year);
+  await dataReady;
   if (cache[ck]) return cache[ck];
   let m;
   if (tmdbId) {
@@ -1925,7 +1944,8 @@ async function resolve([title, year, imdbId, ruTitle, tmdbId]) {
   return film;
 }
 
-const POSTER = p => p ? `https://image.tmdb.org/t/p/w185${p}` : "";
+const POSTER = p => !p ? "" : isLocal(p) ? p : `https://image.tmdb.org/t/p/w185${p}`;
+const FRAME = p => isLocal(p) ? p : IMG + p;
 const stars = n => `<span class="stars">${"★".repeat(n)}<span class="off">${"★".repeat(FRAMES - n)}</span></span>`;
 let lastPts = 0, pending = null, pendingFn = null;
 const WAIT = 5000; // сколько показываем постер перед следующим фильмом
@@ -2262,9 +2282,7 @@ async function pickDaily(n) {
     const idx = ((((n + k) * 97 + 13) % list.length) + list.length) % list.length;
     const f = await resolve(list[idx]);
     if (!f) continue;
-    const imgs = await tmdb(`/movie/${f.id}/images`, { include_image_language: "null" });
-    let all = imgs.backdrops.map(b => b.file_path).sort();
-    if (all.length > DAILY_TRIES) all = all.filter(p => p !== f.bd);
+    let all = (await framesOf(f, DAILY_TRIES)).sort();
     if (all.length < 3) continue; // слишком мало кадров — берём следующий фильм
     const rnd = seededRnd(n * 2654435761);
     for (let i = all.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [all[i], all[j]] = [all[j], all[i]]; }
@@ -2327,8 +2345,8 @@ async function openDaily(archDate) {
 
 function renderDaily() {
   const opened = dOpened();
-  const src = IMG + dFilm.pics[Math.min(dView, dFilm.pics.length - 1)];
-  if ($("dframe").src !== src) $("dframe").src = src;
+  const src = FRAME(dFilm.pics[Math.min(dView, dFilm.pics.length - 1)]);
+  if ($("dframe").getAttribute("src") !== src) $("dframe").src = src;
   $("dprev").disabled = dView <= 0;
   $("dnext").disabled = dView >= opened - 1;
   $("dTries").innerHTML = "";
@@ -3154,10 +3172,7 @@ async function hostRound(i) {
     if (onl.next >= onl.order.length) { onl.order = shuffle([...onl.order]); onl.next = 0; }
     film = onl.order[onl.next++];
     try {
-      const imgs = await tmdb(`/movie/${film.id}/images`, { include_image_language: "null" });
-      let all = imgs.backdrops.map(b => b.file_path);
-      if (all.length > FRAMES) all = all.filter(f => f !== film.bd);
-      pics = shuffle(all).slice(0, FRAMES);
+      pics = shuffle(await framesOf(film, FRAMES)).slice(0, FRAMES);
     } catch (e) {}
   }
   if (!onl) return;
@@ -3218,7 +3233,7 @@ function clientRound(st) {
   $("oScreen").classList.remove("revealed"); $("oCurtain").classList.add("hidden");
   $("oMsg").textContent = ""; $("oMsg").className = "msg";
   $("oFrame").removeAttribute("src");
-  st.pics.forEach(p => { new Image().src = IMG + p; });
+  st.pics.forEach(p => { new Image().src = FRAME(p); });
   $("oOptions").innerHTML = st.options.map((t, k) => `<button disabled data-k="${k}" onclick="onlineAnswer(${k})">${esc(t)}</button>`).join("");
   $("oRound").innerHTML = (onl.firstTo ? `Раунд ${st.round + 1} · до ${onl.firstTo} побед` : `Раунд ${st.round + 1} из ${onl.rounds}`) + (isDouble(st.round) ? ' · <span class="x2">очки ×2</span>' : "");
   clearInterval(onl.tick);
@@ -3254,8 +3269,8 @@ function clientTick() {
 }
 function oFrames() {
   const st = onl.st;
-  const src = IMG + st.pics[onl.fview];
-  if ($("oFrame").src !== src) $("oFrame").src = src;
+  const src = FRAME(st.pics[onl.fview]);
+  if ($("oFrame").getAttribute("src") !== src) $("oFrame").src = src;
   $("oThumbs").innerHTML = st.pics.map((_, i) => `<span class="${i === onl.fview ? "active" : ""} ${i >= onl.opened ? "locked" : ""}" onclick="oFlip(${i})">Кадр ${i + 1}</span>`).join("");
 }
 function oFlip(i) { if (onl && onl.st && i < onl.opened) { onl.fview = i; oFrames(); } }
@@ -3482,8 +3497,10 @@ const _myName = store.get("myName"); if (_myName) $("onName").value = _myName;
 // Постеры для плашек — сразу при открытии сайта, по 5 первых фильмов каждого топа
 async function prefetchTilePosters() {
   key = $("key").value.trim() || DEFAULT_KEY;
+  await dataReady;
   for (const l of ["imdb", "letterboxd", "kinopoisk"]) {
-    if ((store.get("posters_" + l) || []).length >= 5) continue;
+    const had = store.get("posters_" + l) || [];
+    if (had.length >= 5 && (!localData || had.every(isLocal))) continue; // старые ссылки на TMDB меняем на свои
     const fs = await Promise.all(LISTS[l].slice(0, 5).map(x => resolve(x).catch(() => null)));
     const posters = fs.filter(f => f && f.poster).map(f => f.poster);
     if (posters.length) { store.set("posters_" + l, posters); store.set("films6", cache); renderTiles(); }
@@ -3515,12 +3532,10 @@ async function nextRound() {
   $("scoreInfo").textContent = mode === "duel" ? duelScore() : `★ ${score}`;
   try {
     // Кадры без надписей (iso_639_1 = null), чтобы не было названия на картинке
-    const imgs = await tmdb(`/movie/${current.id}/images`, { include_image_language: "null" });
-    let all = imgs.backdrops.map(b => b.file_path);
+    // главный «фон» фильма в TMDB часто промо-картинка, а не кадр — убираем его, если есть замена
+    let all = await framesOf(current, FRAMES);
     roundRnd = mode === "challenge" ? seededRnd(ch.s + round * 7919 + 1) : Math.random;
     if (mode === "challenge") all.sort();
-    // главный «фон» фильма в TMDB часто промо-картинка, а не кадр — убираем его, если есть замена
-    if (all.length > FRAMES) all = all.filter(f => f !== current.bd);
     const pics = shuffle(all, roundRnd).slice(0, FRAMES);
     if (!pics.length) { round++; return nextRound(); }
     current.pics = pics;
@@ -3600,8 +3615,8 @@ function renderOptions() {
 }
 
 function renderFrames(viewIdx) {
-  const src = IMG + current.pics[viewIdx];
-  if ($("frame").src !== src) {
+  const src = FRAME(current.pics[viewIdx]);
+  if ($("frame").getAttribute("src") !== src) {
     $("frame").classList.add("fading");
     setTimeout(() => { $("frame").src = src; $("glow").src = src; }, 150);
   }
