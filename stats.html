@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Статистика · Угадай фильм</title>
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,600;8..60,700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #14181c; --panel: #1c2228; --line: #2c3440; --grid: #252d36;
+    --text: #d8e0e8; --dim: #8899aa; --faint: #556677;
+    --new: #2b9bd3; --ret: #00b04a; --orange: #ff8000;
+    --serif: "Source Serif 4", Georgia, serif; --sans: "IBM Plex Sans", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 var(--sans); }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 24px 16px 60px; }
+  header { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; border-bottom: 1px solid var(--line); padding-bottom: 16px; margin-bottom: 24px; }
+  h1 { font: 700 26px var(--serif); color: #fff; margin: 0; }
+  header a { color: var(--dim); text-decoration: none; } header a:hover { color: var(--text); }
+  h2 { font: 700 20px var(--serif); color: #fff; margin: 36px 0 4px; }
+  .sub { color: var(--dim); margin: 0 0 14px; font-size: 14px; }
+  .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .tile { background: var(--panel); border-radius: 8px; padding: 16px 18px; }
+  .tile b { display: block; font: 700 32px var(--serif); color: #fff; line-height: 1.1; }
+  .tile span { color: var(--dim); font-size: 13px; }
+  .panel { background: var(--panel); border-radius: 8px; padding: 18px; position: relative; }
+  .legend { display: flex; gap: 18px; font-size: 13px; color: var(--dim); margin-bottom: 8px; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+  svg text { fill: var(--faint); font: 11px var(--sans); }
+  .tip { position: absolute; pointer-events: none; background: #0d1013; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font-size: 13px; white-space: nowrap; display: none; z-index: 2; }
+  .tip b { color: #fff; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { padding: 8px 10px; text-align: right; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  th { color: var(--dim); font-weight: 500; }
+  td.z { color: var(--faint); }
+  .scroll { overflow-x: auto; }
+  .msg { background: var(--panel); border-radius: 8px; padding: 20px; color: var(--dim); }
+  .msg b { color: #fff; }
+  @media (max-width: 700px) { .tiles { grid-template-columns: repeat(2, 1fr); } .tile b { font-size: 26px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header><h1>Статистика сайта</h1><a href="./">← К игре</a></header>
+  <div id="out"><p class="sub">Загружаю…</p></div>
+</div>
+<script>
+const DB = "https://cinemaguess-default-rtdb.europe-west1.firebasedatabase.app";
+const EVENTS = {
+  visit: "Заходы на сайт", app_open: "Запуски с экрана телефона", install_tap: "Нажали «Установить»", install: "Установили на телефон",
+  g_quick: "Быстрая игра", g_text: "Без вариантов", g_survival: "Выживание", g_blur: "Размытый кадр", g_top: "Топ-250 по этапам", g_duel: "Дуэль на одном экране",
+  daily_play: "Начали фильм дня", daily_win: "Угадали фильм дня", daily_lose: "Не угадали фильм дня",
+  arch_play: "Играли из архива", arch_win: "Угадали из архива", arch_lose: "Не угадали из архива",
+  room_create: "Создали комнату", duel_create: "Создали онлайн-дуэль", room_join: "Зашли в комнату по ссылке", room_game: "Игр в комнатах", duel_game: "Онлайн-дуэлей",
+  ch_create: "Создали вызов другу", ch_accept: "Приняли вызов", share_daily: "Поделились фильмом дня", share_room: "Поделились комнатой", share_ch: "Отправили вызов", share_chres: "Поделились счётом вызова",
+};
+const $ = id => document.getElementById(id);
+const fmt = n => n.toLocaleString("ru-RU");
+const dayAdd = (d, k) => new Date(Date.parse(d + "T12:00:00Z") + k * 864e5).toISOString().slice(0, 10);
+const ruDay = (d, long) => new Date(d + "T12:00:00Z").toLocaleDateString("ru-RU", long ? { day: "numeric", month: "long" } : { day: "numeric", month: "short" }).replace(".", "");
+const pct = (a, b) => b ? Math.round(a / b * 100) + "%" : "—";
+const today = new Date(Date.now() + 3 * 3600e3).toISOString().slice(0, 10);
+
+async function load() {
+  let data;
+  try {
+    const r = await fetch(`${DB}/stats.json`);
+    if (r.status === 401) throw new Error("rules");
+    data = await r.json();
+  } catch (e) {
+    $("out").innerHTML = `<div class="msg"><b>Статистика пока недоступна.</b><br>${e.message === "rules" ? "В Firebase не обновлены правила доступа для статистики." : "Не получилось связаться с базой. Проверь интернет и обнови страницу."}</div>`;
+    return;
+  }
+  data = data || {};
+  // последние 30 дней, включая пустые
+  const days = []; for (let i = 29; i >= 0; i--) days.push(dayAdd(today, -i));
+  const users = d => (data[d] && data[d].u) || {};
+  const ev = d => (data[d] && data[d].e) || {};
+  const rows = days.map(d => {
+    const u = users(d), ids = Object.keys(u);
+    const nw = ids.filter(id => u[id] === d).length;
+    return { d, total: ids.length, nw, ret: ids.length - nw };
+  });
+  if (!Object.keys(data).length) {
+    $("out").innerHTML = `<div class="msg"><b>Данных пока нет.</b><br>Статистика начнёт собираться, как только кто-нибудь зайдёт на сайт.</div>`;
+    return;
+  }
+  // уникальные за 7 дней
+  const last7 = days.slice(-7), uniq7 = new Set(), new7 = new Set();
+  last7.forEach(d => Object.entries(users(d)).forEach(([id, first]) => { uniq7.add(id); if (first === d) new7.add(id); }));
+  // возвращаемость: новые в день D, кто зашёл на следующий день / в течение 7 дней
+  const ret = days.map(d => {
+    const nu = Object.entries(users(d)).filter(([, f]) => f === d).map(([id]) => id);
+    const d1 = nu.filter(id => users(dayAdd(d, 1))[id]).length;
+    let d7 = 0; nu.forEach(id => { for (let k = 1; k <= 7; k++) if (users(dayAdd(d, k))[id]) { d7++; break; } });
+    return { d, n: nu.length, d1, d7, d1ready: dayAdd(d, 1) < today, d7ready: dayAdd(d, 7) < today };
+  });
+  const r1 = ret.filter(x => x.d1ready && x.n), n1 = r1.reduce((a, x) => a + x.n, 0), k1 = r1.reduce((a, x) => a + x.d1, 0);
+  const todayRow = rows[rows.length - 1];
+  const games7 = last7.reduce((a, d) => a + Object.entries(ev(d)).filter(([k]) => k.startsWith("g_") || k === "daily_play" || k === "room_game" || k === "duel_game").reduce((s, [, v]) => s + v, 0), 0);
+
+  $("out").innerHTML = `
+    <div class="tiles">
+      <div class="tile"><b>${fmt(todayRow.total)}</b><span>игроков сегодня</span></div>
+      <div class="tile"><b>${fmt(uniq7.size)}</b><span>игроков за 7 дней, из них ${fmt(new7.size)} новых</span></div>
+      <div class="tile"><b>${n1 ? pct(k1, n1) : "—"}</b><span>новых вернулись на следующий день</span></div>
+      <div class="tile"><b>${fmt(games7)}</b><span>игр за 7 дней</span></div>
+    </div>
+    <h2>Игроки по дням</h2>
+    <p class="sub">Сколько разных устройств зашло на сайт за последние 30 дней</p>
+    <div class="panel" id="chartBox">
+      <div class="legend"><span><i style="background:var(--ret)"></i>вернулись</span><span><i style="background:var(--new)"></i>новые</span></div>
+      <svg id="chart" width="100%" height="240" role="img" aria-label="Игроки по дням за 30 дней"></svg>
+      <div class="tip" id="tip"></div>
+    </div>
+    <h2>Возвращаются ли новые игроки</h2>
+    <p class="sub">Главный показатель для MVP: какая доля новых игроков пришла снова</p>
+    <div class="panel scroll"><table>
+      <thead><tr><th>День первого захода</th><th>Новых</th><th>Вернулись на следующий день</th><th>Вернулись в течение недели</th></tr></thead>
+      <tbody>${ret.slice(-14).reverse().map(x => `<tr><td>${ruDay(x.d, true)}</td><td class="${x.n ? "" : "z"}">${x.n}</td>
+        <td class="${x.n && x.d1ready ? "" : "z"}">${!x.n ? "—" : x.d1ready ? `${x.d1} · ${pct(x.d1, x.n)}` : "ждём"}</td>
+        <td class="${x.n && x.d7ready ? "" : "z"}">${!x.n ? "—" : x.d7ready ? `${x.d7} · ${pct(x.d7, x.n)}` : `пока ${x.d7}`}</td></tr>`).join("")}</tbody>
+    </table></div>
+    <h2>Что делают на сайте</h2>
+    <p class="sub">Сколько раз произошло событие за последние 7 дней</p>
+    <div class="panel scroll"><table>
+      <thead><tr><th>Событие</th>${last7.map(d => `<th>${ruDay(d)}</th>`).join("")}<th>Всего</th></tr></thead>
+      <tbody>${Object.keys(EVENTS).filter(k => last7.some(d => ev(d)[k])).map(k => {
+        const vals = last7.map(d => ev(d)[k] || 0), sum = vals.reduce((a, b) => a + b, 0);
+        return `<tr><td>${EVENTS[k]}</td>${vals.map(v => `<td class="${v ? "" : "z"}">${v}</td>`).join("")}<td><b>${sum}</b></td></tr>`;
+      }).join("") || `<tr><td colspan="9" class="z">За неделю событий нет</td></tr>`}</tbody>
+    </table></div>`;
+  drawChart(rows);
+}
+
+function drawChart(rows) {
+  const svg = $("chart"), box = $("chartBox"), tip = $("tip");
+  const W = svg.clientWidth, H = 240, L = 30, R = 4, T = 8, B = 24;
+  const max = Math.max(4, ...rows.map(r => r.total));
+  const step = Math.ceil(max / 4), top = step * 4;
+  const y = v => T + (H - T - B) * (1 - v / top);
+  const bw = (W - L - R) / rows.length, w = Math.max(3, Math.min(22, bw - 4));
+  let s = "";
+  for (let v = 0; v <= top; v += step) s += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--grid)"/><text x="${L - 6}" y="${y(v) + 4}" text-anchor="end">${v}</text>`;
+  rows.forEach((r, i) => {
+    const x = L + i * bw + (bw - w) / 2;
+    if (r.ret) s += `<rect x="${x}" y="${y(r.ret)}" width="${w}" height="${y(0) - y(r.ret)}" fill="var(--ret)" rx="${r.nw ? 0 : 3}"/>`;
+    if (r.nw) s += `<rect x="${x}" y="${y(r.total)}" width="${w}" height="${y(r.ret) - y(r.total) - (r.ret ? 2 : 0)}" fill="var(--new)" rx="3"/>`;
+    if (i % 5 === 4 || i === rows.length - 1) s += `<text x="${x + w / 2}" y="${H - 6}" text-anchor="middle">${ruDay(r.d)}</text>`;
+    s += `<rect class="hit" data-i="${i}" x="${L + i * bw}" y="${T}" width="${bw}" height="${H - T - B}" fill="transparent"/>`;
+  });
+  svg.innerHTML = s;
+  svg.querySelectorAll(".hit").forEach(el => {
+    el.addEventListener("mousemove", e => {
+      const r = rows[+el.dataset.i], bb = box.getBoundingClientRect();
+      tip.innerHTML = `<b>${ruDay(r.d, true)}</b><br>всего ${r.total} · вернулись ${r.ret} · новые ${r.nw}`;
+      tip.style.display = "block";
+      tip.style.left = Math.min(e.clientX - bb.left + 12, bb.width - tip.offsetWidth - 8) + "px";
+      tip.style.top = (e.clientY - bb.top - 50) + "px";
+    });
+    el.addEventListener("mouseleave", () => { tip.style.display = "none"; });
+  });
+}
+load();
+addEventListener("resize", () => { clearTimeout(window._rz); window._rz = setTimeout(load, 200); });
+</script>
+</body>
+</html>

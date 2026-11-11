@@ -20,6 +20,10 @@
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="icon" href="favicon.png" type="image/png" sizes="32x32">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Угадай фильм">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,600;8..60,700&display=swap" rel="stylesheet">
 <style>
@@ -351,6 +355,18 @@
   @media (max-width: 560px) { .arch-grid { grid-template-columns: repeat(3, 1fr); gap: 8px; } .arch-tile .no { font-size: 13px; } .arch-tile.new .q { font-size: 40px; }
     .arch-pill { top: 12px; right: 12px; padding: 6px 11px; } .arch-rand { width: 100%; justify-content: center; } }
   @media (prefers-reduced-motion: reduce) { .arch-tile, .arch-tile:hover { transition: none; transform: none; } }
+  /* ===== Установка на телефон ===== */
+  .topnav .install-btn { color: var(--orange); }
+  .topnav .install-btn:hover { color: #ffa040; }
+  .sheet-bg { position: fixed; inset: 0; z-index: 70; background: rgba(5,7,9,.72); display: flex; align-items: flex-end; justify-content: center; padding: 16px; }
+  .sheet { width: 100%; max-width: 440px; background: var(--panel); border-radius: 14px; padding: 26px 24px 22px; box-shadow: 0 20px 60px rgba(0,0,0,.5); text-align: center; }
+  .sheet img { border-radius: 14px; }
+  .sheet h3 { font: 700 22px var(--serif); color: #fff; margin: 12px 0 6px; }
+  .sheet ol { text-align: left; margin: 16px 0 20px; padding-left: 22px; line-height: 1.55; }
+  .sheet ol li { margin-bottom: 8px; }
+  .sheet ol b { color: #fff; }
+  .sheet button { width: 100%; }
+  @media (min-width: 700px) { .sheet-bg { align-items: center; } }
   /* ===== Обрыв связи в онлайне ===== */
   .net-bar { position: fixed; z-index: 60; left: 50%; top: 12px; transform: translateX(-50%); max-width: calc(100% - 32px);
     padding: 9px 16px; border-radius: 20px; background: #3a2a10; color: #ffd9a8; font: 600 13px var(--sans); box-shadow: 0 6px 20px rgba(0,0,0,.4), inset 0 0 0 1px rgba(255,128,0,.5); text-align: center; }
@@ -598,12 +614,22 @@
 </head>
 <body class="solo">
 <div id="netBar" class="net-bar hidden" role="status" aria-live="polite"></div>
+<div id="installSheet" class="sheet-bg hidden" onclick="if (event.target === this) closeInstall()">
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="isTitle">
+    <img src="apple-touch-icon.png" alt="" width="64" height="64">
+    <h3 id="isTitle">Игра на экране телефона</h3>
+    <p class="hint">Откроется на весь экран, без адресной строки, и будет запускаться как обычное приложение.</p>
+    <ol id="isSteps"></ol>
+    <button class="primary" onclick="closeInstall()">Понятно</button>
+  </div>
+</div>
 <div class="wrap">
   <header class="marquee">
     <h1><a href="#" onclick="goHome(); return false;">Угадай фильм по кадру</a></h1>
     <nav class="topnav">
       <button onclick="openAch()"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4h10v4a5 5 0 0 1-10 0z"/><path d="M7 6H4.5a2.5 2.5 0 0 0 2.6 3.4M17 6h2.5a2.5 2.5 0 0 1-2.6 3.4M12 13v4M8.5 20h7M9.5 17h5"/></svg><span>Достижения</span> <span class="nav-count" id="achCount"></span></button>
       <button onclick="openStats()"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V11M12 20V5M19 20v-6"/></svg><span>Статистика</span></button>
+      <button id="installBtn" class="install-btn hidden" onclick="installApp()"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M12 7.5v7M9 11.5l3 3 3-3M10.5 18.5h3"/></svg><span>Установить</span></button>
     </nav>
     <div class="bulbs"></div>
   </header>
@@ -1071,7 +1097,7 @@ The Matrix 1999"></textarea>
 
   <footer class="credits">
     <a href="https://www.themoviedb.org" target="_blank" rel="noopener">TMDB</a>
-    <p>Кадры, постеры и данные о фильмах предоставлены The Movie Database. Этот сайт использует API TMDB, но не одобрен и не сертифицирован TMDB. Списки и оценки — IMDb, Letterboxd и Кинопоиск.</p>
+    <p>Кадры, постеры и данные о фильмах предоставлены The Movie Database. Этот сайт использует API TMDB, но не одобрен и не сертифицирован TMDB. Списки и оценки — IMDb, Letterboxd и Кинопоиск. Сайт считает анонимную статистику: сколько игр сыграно, без имён и личных данных.</p>
   </footer>
 </div>
 
@@ -2119,6 +2145,7 @@ async function ensureList() {
 }
 async function startMode(m) {
   if (!(await ensureList())) return;
+  track("g_" + m);
   mode = m;
   answerType = m === "text" ? "text" : "options";
   if (m === "top") { optPool = films; return showStages(); }
@@ -2399,11 +2426,13 @@ function dFlip(d) {
 
 function dRecord(entry) {
   daily.guesses.push(entry);
+  if (daily.guesses.length === 1) track(dArchive ? "arch_play" : "daily_play");
   if (entry.r === "right") { daily.done = true; daily.won = true; }
   else if (daily.guesses.length >= DAILY_TRIES) daily.done = true;
   if (daily.done) {
     daily.finishedAt = Date.now();
     daily.poster = dFilm.poster; daily.title = dFilm.kpTitle || dFilm.ru;
+    track((dArchive ? "arch_" : "daily_") + (daily.won ? "win" : "lose"));
     if (dArchive) { // архив не трогает серию, статистику дня и общую таблицу
       const cnt = (store.get("arch_played") || 0) + 1; store.set("arch_played", cnt);
       checkAch({ ev: "archive", count: cnt, won: daily.won });
@@ -2512,6 +2541,7 @@ function tickCountdown() {
 }
 
 async function dShare() {
+  track("share_daily");
   const url = location.protocol.startsWith("http") ? location.origin + location.pathname : "";
   const text = `Угадай фильм по кадру · фильм дня №${daily.n}${dArchive ? " (архив)" : ""}\n${daily.won ? daily.guesses.length : "✕"}/${DAILY_TRIES} ${emojiRow()}${url ? "\n" + url : ""}`;
   if (navigator.share) { try { await navigator.share({ text }); return; } catch (e) { if (e.name === "AbortError") return; } }
@@ -3022,6 +3052,7 @@ async function onlineCreate(kind) {
   const code = genCode(), now = NET.now();
   mode = "online"; roundRnd = Math.random;
   const L = LENS[gameLen];
+  track(kind === "duel" ? "duel_create" : "room_create");
   onl = { code, pid: PID, host: true, kind, list: listName, order: gameLen === "short" ? shuffle([...p]) : progressiveOrder(p, LENS[gameLen].n), next: 0, opts: p.length >= 8 ? p : films, timers: [], game: 0 };
   const T = timeFor(L.T), step = Math.min(ON_STEP, Math.max(2, Math.round(T / 4)));
   applyRoomCfg({ kind, len: gameLen, rounds: L.n, T, step, reveal: L.reveal });
@@ -3079,6 +3110,7 @@ async function joinSubmit(e) {
     if (onl) await onlineLeave(true);
     mode = "online";
     onl = { code, pid: PID, host: r.meta.host === PID, kind: r.meta.kind, list: r.meta.list, timers: [] };
+    track("room_join");
     applyRoomCfg(r.meta);
     const me = players[PID] || {};
     onl.me = { name, joined: me.joined || NET.now(), score: me.score || 0 };
@@ -3097,6 +3129,7 @@ function readRoomLink() {
 }
 function dropRoomLink() { if (location.hash.startsWith("#r=")) history.replaceState(null, "", location.href.split("#")[0]); }
 async function shareRoom() {
+  track("share_room");
   const url = roomUrl(onl.code);
   const text = `Заходи в мою ${onl.kind === "duel" ? "онлайн-дуэль" : "комнату"} в «Угадай фильм по кадру». Код ${onl.code}`;
   if (navigator.share) { try { await navigator.share({ text, url }); return; } catch (e) { if (e.name === "AbortError") return; } }
@@ -3298,6 +3331,7 @@ const clearHostTimers = () => { (onl.timers || []).forEach(clearTimeout); onl.ti
 async function hostStartGame() {
   const r = onl.room;
   if (!r || playersArr(r).length < 2) return;
+  track(onl.kind === "duel" ? "duel_game" : "room_game");
   if (!(await ensureHostOrder(r))) return;
   onl.game = (r.state.game || 0) + 1;
   const upd = { answers: null, judged: null };
@@ -3495,6 +3529,66 @@ document.addEventListener("keydown", e => {
 // Общая для всех таблица «Фильма дня» в Firebase (REST, без библиотеки). Игрок сам решает, добавлять ли результат
 const UID = (() => { let id = store.get("uid"); if (!id) { id = Math.random().toString(36).slice(2, 12); store.set("uid", id); } return id; })();
 const DB_URL = FIREBASE_CONFIG && FIREBASE_CONFIG.databaseURL;
+
+// ===================== АНОНИМНАЯ СТАТИСТИКА =====================
+// Без имён и личных данных: случайный номер устройства (не связан с таблицей фильма дня),
+// дата первого визита и счётчики событий по дням. Смотреть: stats.html
+if (/[?&]nostat/.test(location.search)) store.set("nostat", 1);
+const STAT_OFF = !DB_URL || !/^https?:$/.test(location.protocol) || /^(localhost|127\.0\.0\.1)$/.test(location.hostname) || store.get("nostat");
+const STAT_ID = (() => { let id = store.get("sid"); if (!id) { id = Math.random().toString(36).slice(2, 12); store.set("sid", id); } return id; })();
+const STAT_FIRST = (() => { let d = store.get("sfirst"); if (!d) { d = mskDate(); store.set("sfirst", d); } return d; })();
+function track(ev) {
+  if (STAT_OFF) return;
+  const day = mskDate();
+  try {
+    fetch(`${DB_URL}/stats/${day}/e/${ev}.json`, { method: "PUT", body: JSON.stringify({ ".sv": { increment: 1 } }), keepalive: true }).catch(() => {});
+    if (store.get("sday") !== day) // «был на сайте сегодня» — один раз в день с устройства
+      fetch(`${DB_URL}/stats/${day}/u/${STAT_ID}.json`, { method: "PUT", body: JSON.stringify(STAT_FIRST) })
+        .then(r => { if (r.ok || r.status === 401) store.set("sday", day); }).catch(() => {});
+  } catch {}
+}
+const isStandalone = () => (window.matchMedia && matchMedia("(display-mode: standalone)").matches) || navigator.standalone === true;
+try { if (!sessionStorage.getItem("sv")) { sessionStorage.setItem("sv", 1); track(isStandalone() ? "app_open" : "visit"); } } catch { track("visit"); }
+
+// ===================== УСТАНОВКА НА ТЕЛЕФОН =====================
+let installPrompt = null;
+const UA = navigator.userAgent;
+const isIOS = /iPhone|iPad|iPod/.test(UA) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+const isAndroid = /Android/.test(UA);
+const inTelegram = /Telegram/i.test(UA) || !!window.TelegramWebview || !!window.TelegramWebviewProxy;
+function refreshInstallBtn() {
+  $("installBtn").classList.toggle("hidden", isStandalone() || !(installPrompt || isIOS || isAndroid));
+}
+addEventListener("beforeinstallprompt", e => { e.preventDefault(); installPrompt = e; refreshInstallBtn(); });
+addEventListener("appinstalled", () => { installPrompt = null; track("install"); refreshInstallBtn(); toastMsg("Игра установлена — ищи иконку на экране телефона"); });
+refreshInstallBtn();
+async function installApp() {
+  track("install_tap");
+  if (installPrompt) { // Chrome на Android и компьютере умеет ставить сам
+    installPrompt.prompt();
+    try { await installPrompt.userChoice; } catch {}
+    installPrompt = null; refreshInstallBtn();
+    return;
+  }
+  let steps;
+  if (inTelegram) steps = [
+    "Встроенный браузер Телеграма не умеет ставить сайты на экран.",
+    `Нажми <b>${isIOS ? "⋯" : "⋮"}</b> вверху и выбери <b>«Открыть в браузере»</b>.`,
+    "Там снова нажми <b>«Установить»</b> вверху сайта."];
+  else if (isIOS) steps = [
+    "Нажми кнопку <b>«Поделиться»</b> — квадрат со стрелкой вверх (в Safari внизу экрана, в Chrome справа от адреса).",
+    "Пролистай вниз и выбери <b>«На экран „Домой“»</b>.",
+    "Нажми <b>«Добавить»</b> — на экране появится иконка игры."];
+  else steps = [
+    "Нажми <b>⋮</b> в правом верхнем углу браузера.",
+    "Выбери <b>«Установить приложение»</b> или <b>«Добавить на главный экран»</b>.",
+    "Подтверди — на экране появится иконка игры."];
+  $("isSteps").innerHTML = steps.map(t => `<li>${t}</li>`).join("");
+  $("installSheet").classList.remove("hidden");
+}
+function closeInstall() { $("installSheet").classList.add("hidden"); }
+if ("serviceWorker" in navigator && /^https?:$/.test(location.protocol) && !/^(localhost|127\.0\.0\.1)$/.test(location.hostname))
+  addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
 async function loadBoard() {
   const body = $("dBoardBody");
   if (!body) return;
@@ -3560,6 +3654,7 @@ async function createChallenge(e) {
   if (!(await ensureList())) return;
   const p = pool();
   if (p.length < 4) { $("loading").textContent = "Под эти фильтры слишком мало фильмов для вызова"; return; }
+  track("ch_create");
   mode = "challenge"; answerType = "options"; optPool = films; // у обоих игроков варианты из всего списка
   const L = LENS[gameLen];
   const order = (gameLen === "short" ? shuffle([...p]) : progressiveOrder(p, L.n)).slice(0, L.n);
@@ -3575,6 +3670,7 @@ function rematchChallenge() {
   if (me) $("onName").value = me;
 }
 async function shareChallenge() {
+  track("share_ch");
   const url = $("chUrl").value;
   const text = `${ch.n} бросает тебе вызов: угадай ${ch.ids.length} фильмов по кадру и побей ★ ${score}`;
   if (navigator.share) { try { await navigator.share({ text, url }); return; } catch (e) { if (e.name === "AbortError") return; } }
@@ -3582,6 +3678,7 @@ async function shareChallenge() {
   catch { $("chUrl").select(); }
 }
 async function shareChallengeResult() {
+  track("share_chres");
   const r = ch.result;
   const text = `Ответ на вызов в «Угадай фильм по кадру»: ${ch.me} ${r.me} : ${r.his} ${ch.n}${r.res === "win" ? " 🏆" : ""}`;
   if (navigator.share) { try { await navigator.share({ text }); return; } catch (e) { if (e.name === "AbortError") return; } }
@@ -3633,6 +3730,7 @@ async function acceptChallenge(e) {
   }
   if (!order.length) { $("chErr").textContent = "Не получилось открыть фильмы этого вызова"; return; }
   $("chErr").textContent = "";
+  track("ch_accept");
   mode = "challenge"; answerType = "options"; optPool = ch.l === "custom" ? order : films;
   roundTime = ch.t || TIME; revealWait = roundTime < TIME ? 3000 : WAIT;
   beginGame(order);

@@ -1,0 +1,18 @@
+{
+  "name": "Угадай фильм по кадру",
+  "short_name": "Угадай фильм",
+  "description": "Узнай фильм по одному кадру: топ-250 IMDb, Letterboxd и Кинопоиска, фильм дня и игры с друзьями онлайн",
+  "lang": "ru",
+  "id": "./",
+  "start_url": "./?source=app",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#14181c",
+  "theme_color": "#14181c",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
