@@ -4,6 +4,22 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Угадай фильм по кадру</title>
+<meta name="description" content="Узнай фильм по одному кадру: топ-250 IMDb, Letterboxd и Кинопоиска, фильм дня и игры с друзьями онлайн">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Угадай фильм по кадру">
+<meta property="og:locale" content="ru_RU">
+<meta property="og:title" content="Угадай фильм по кадру">
+<meta property="og:description" content="Узнай фильм по одному кадру: топ-250 IMDb, Letterboxd и Кинопоиска, фильм дня и игры с друзьями онлайн">
+<meta property="og:url" content="https://tj7hmm4br7-ops.github.io/kadr/">
+<meta property="og:image" content="https://tj7hmm4br7-ops.github.io/kadr/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Угадай фильм по кадру">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#14181c">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon.png" type="image/png" sizes="32x32">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,600;8..60,700&display=swap" rel="stylesheet">
 <style>
@@ -335,6 +351,12 @@
   @media (max-width: 560px) { .arch-grid { grid-template-columns: repeat(3, 1fr); gap: 8px; } .arch-tile .no { font-size: 13px; } .arch-tile.new .q { font-size: 40px; }
     .arch-pill { top: 12px; right: 12px; padding: 6px 11px; } .arch-rand { width: 100%; justify-content: center; } }
   @media (prefers-reduced-motion: reduce) { .arch-tile, .arch-tile:hover { transition: none; transform: none; } }
+  /* ===== Обрыв связи в онлайне ===== */
+  .net-bar { position: fixed; z-index: 60; left: 50%; top: 12px; transform: translateX(-50%); max-width: calc(100% - 32px);
+    padding: 9px 16px; border-radius: 20px; background: #3a2a10; color: #ffd9a8; font: 600 13px var(--sans); box-shadow: 0 6px 20px rgba(0,0,0,.4), inset 0 0 0 1px rgba(255,128,0,.5); text-align: center; }
+  li.off { opacity: .5; }
+  li.off .avatar, li.off .av { filter: grayscale(1); }
+  .nolink { color: var(--orange) !important; }
   .duel-setup { align-items: center; padding: 18px; }
   .duel-setup .vs { color: #b07cff; font: 700 16px var(--serif); }
   .duel-setup button { padding: 12px 22px; }
@@ -575,6 +597,7 @@
 </style>
 </head>
 <body class="solo">
+<div id="netBar" class="net-bar hidden" role="status" aria-live="polite"></div>
 <div class="wrap">
   <header class="marquee">
     <h1><a href="#" onclick="goHome(); return false;">Угадай фильм по кадру</a></h1>
@@ -2883,7 +2906,7 @@ function loadScript(src) {
 // Сетевой слой: Firebase Realtime Database (или локальный, для проверки в нескольких вкладках: ?net=local)
 async function getNet() {
   if (NET) return NET;
-  if (new URLSearchParams(location.search).get("net") === "local") return (NET = localNet());
+  if (new URLSearchParams(location.search).get("net") === "local") { NET = localNet(); watchConnection(); return NET; }
   if (!FIREBASE_CONFIG) throw new Error("Онлайн-режим ещё не подключён: нужно настроить Firebase");
   const V = "10.12.2";
   for (const base of [`https://www.gstatic.com/firebasejs/${V}`, `https://cdn.jsdelivr.net/npm/firebase@${V}`]) {
@@ -2908,7 +2931,11 @@ async function getNet() {
     onDisconnectSet: (p, v) => db.ref(p).onDisconnect().set(v),
     cancelDisconnect: p => db.ref(p).onDisconnect().cancel(),
     now: () => Date.now() + offset,
+    TS: firebase.database.ServerValue.TIMESTAMP, // время сервера в момент записи
+    onConnected: cb => db.ref(".info/connected").on("value", s => cb(!!s.val())),
+    goOffline: () => db.goOffline(), goOnline: () => db.goOnline(), // для проверки обрыва связи
   };
+  watchConnection();
   return NET;
 }
 // Тот же интерфейс без сервера: вкладки одного браузера обмениваются через BroadcastChannel
@@ -2928,16 +2955,23 @@ function localNet() {
   };
   const notify = () => subs.forEach(sb => { const v = JSON.stringify(getAt(sb.p)); if (v !== sb.last) { sb.last = v; sb.cb(JSON.parse(v)); } });
   const apply = m => {
-    if (m.op === "set") setAt(m.p, m.v);
-    else if (m.op === "update") Object.entries(m.v).forEach(([k, v]) => setAt(m.p + "/" + k, v));
+    if (m.op === "set") setAt(m.p, m.v === "__TS__" ? Date.now() : m.v);
+    else if (m.op === "update") Object.entries(m.v).forEach(([k, v]) => setAt(m.p + "/" + k, v === "__TS__" ? Date.now() : v));
     else if (m.op === "tree") { if (m.to !== me || synced) return; synced = true; tree = m.v; }
     notify();
   };
-  const send = m => { bc.postMessage(m); return new Promise(res => setTimeout(() => { apply(m); res(); })); };
+  // своя запись применяется сразу (как у Firebase), чужие — по мере прихода
+  const send = m => { bc.postMessage(m); apply(m); return new Promise(res => setTimeout(res)); };
   bc.onmessage = e => { const m = e.data; if (m.op === "sync?") bc.postMessage({ op: "tree", to: m.from, v: tree }); else setTimeout(() => apply(m)); };
   bc.postMessage({ op: "sync?", from: me });
-  addEventListener("pagehide", () => disc.forEach((v, p) => bc.postMessage({ op: "set", p, v })));
+  const fire = () => disc.forEach((v, p) => bc.postMessage({ op: "set", p, v: v === "__TS__" ? Date.now() : v }));
+  addEventListener("pagehide", fire);
+  const conn = new Set();
   return {
+    TS: "__TS__",
+    onConnected: cb => { conn.add(cb); setTimeout(() => cb(true)); },
+    goOffline: () => { fire(); conn.forEach(cb => cb(false)); },
+    goOnline: () => conn.forEach(cb => cb(true)),
     set: (p, v) => send({ op: "set", p, v: v === undefined ? null : v }),
     update: (p, v) => send({ op: "update", p, v }),
     remove: p => send({ op: "set", p, v: null }),
@@ -2996,8 +3030,8 @@ async function onlineCreate(kind) {
     state: { phase: "lobby", game: 0, round: -1 },
     players: { [PID]: { name, joined: now, score: 0 } },
   }));
-  // Создатель отключился — комната удаляется целиком, у остальных это выглядит как «игра закончилась»
-  NET.onDisconnectRemove(`rooms/${code}`);
+  onl.me = { name, joined: now, score: 0 };
+  armPresence();
   $("onErr").textContent = "";
   listenRoom();
   show("lobby");
@@ -3012,6 +3046,8 @@ function joinByForm(e) {
 }
 async function openJoin(code) {
   code = (code || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 5);
+  const last = lastRoom.get();
+  if (last && last.code === code && Date.now() - last.t < RESUME_MS && await resumeRoom(true)) return;
   onlJoinCode = code;
   $("jsCode").textContent = code; $("jsErr").textContent = ""; $("jsDesc").textContent = "Введи имя, чтобы войти";
   $("jsName").value = store.get("myName") || "";
@@ -3045,8 +3081,9 @@ async function joinSubmit(e) {
     onl = { code, pid: PID, host: r.meta.host === PID, kind: r.meta.kind, list: r.meta.list, timers: [] };
     applyRoomCfg(r.meta);
     const me = players[PID] || {};
-    await NET.update(`rooms/${code}/players/${PID}`, { name, joined: me.joined || NET.now(), score: me.score || 0 });
-    NET.onDisconnectRemove(onl.host ? `rooms/${code}` : `rooms/${code}/players/${PID}`);
+    onl.me = { name, joined: me.joined || NET.now(), score: me.score || 0 };
+    await NET.update(`rooms/${code}/players/${PID}`, { ...onl.me, off: null });
+    armPresence();
     dropRoomLink();
     listenRoom();
     show("lobby");
@@ -3069,21 +3106,23 @@ async function shareRoom() {
 // ----- выход -----
 function stopOnline(o) {
   if (!o) return;
-  clearInterval(o.tick);
+  clearInterval(o.tick); clearInterval(o.watch);
+  netBar("");
   (o.timers || []).forEach(clearTimeout);
   if (o.unsub) o.unsub();
 }
 async function onlineLeave(silent) {
   const o = onl; onl = null;
   stopOnline(o);
+  lastRoom.set(null);
   if (o && NET) {
     try {
+      NET.cancelDisconnect(`rooms/${o.code}/players/${o.pid}/off`);
       if (o.host) { // создатель вышел — убираем комнату из базы, чтобы не копился мусор
+        NET.cancelDisconnect(`rooms/${o.code}/meta/hostOff`);
         await NET.remove(`rooms/${o.code}`);
-        NET.cancelDisconnect(`rooms/${o.code}`);
       } else {
         await NET.remove(`rooms/${o.code}/players/${o.pid}`);
-        NET.cancelDisconnect(`rooms/${o.code}/players/${o.pid}`);
       }
     } catch (e) {}
   }
@@ -3101,8 +3140,100 @@ function quitGame() {
 function goHome() { stopSoloGame(); if (onl) onlineLeave(); else show("start"); }
 function onlineClosed(msg) {
   const o = onl; onl = null; stopOnline(o);
+  lastRoom.set(null);
   show("start");
   if (msg) toastMsg(msg);
+}
+
+// ----- обрыв связи и возвращение в комнату -----
+// Где мы играли: в этой вкладке (sessionStorage) или, если вкладку закрыли, в браузере вообще
+const lastRoom = {
+  get() { try { const v = sessionStorage.getItem("lastRoom"); if (v !== null) return JSON.parse(v); } catch {} return store.get("lastRoom"); },
+  set(v) { try { sessionStorage.setItem("lastRoom", JSON.stringify(v)); } catch {} store.set("lastRoom", v); },
+};
+const RESUME_MS = 30 * 60 * 1000;   // после перезагрузки страницы возвращаем в комнату в течение 30 минут
+const AWAY_MS = 60 * 1000;          // сколько ждём игрока или создателя без связи
+// Отмечаемся «на связи»; если связь пропадёт, сервер сам запишет время обрыва
+function armPresence() {
+  if (!onl) return;
+  const base = `rooms/${onl.code}`;
+  NET.onDisconnectSet(`${base}/players/${onl.pid}/off`, NET.TS);
+  NET.remove(`${base}/players/${onl.pid}/off`);
+  if (onl.host) { NET.onDisconnectSet(`${base}/meta/hostOff`, NET.TS); NET.remove(`${base}/meta/hostOff`); }
+}
+function watchConnection() {
+  let lost = false;
+  NET.onConnected(up => {
+    if (!up) { lost = true; if (onl) { onl.connected = false; netBar("Нет связи с сервером. Переподключаемся…"); } return; }
+    if (!onl) { lost = false; return; }
+    onl.connected = true;
+    netBar("");
+    if (lost) { lost = false; armPresence(); toastMsg("Связь вернулась"); }
+  });
+}
+function netBar(text) {
+  const el = $("netBar"); if (!el) return;
+  el.textContent = text; el.classList.toggle("hidden", !text);
+}
+// Раз в несколько секунд: создатель убирает тех, кто давно без связи; игроки следят за создателем
+function watchRoom() {
+  if (!onl || onl.watch) return;
+  onl.watch = setInterval(() => {
+    if (!onl || !onl.room) return;
+    const r = onl.room, now = NET.now();
+    if (onl.connected === false) return;
+    if (onl.host) {
+      const upd = {};
+      Object.entries(r.players || {}).forEach(([pid, p]) => { if (pid !== onl.pid && p.off && now - p.off > AWAY_MS) upd[`players/${pid}`] = null; });
+      if (Object.keys(upd).length) NET.update(roomPath(), upd);
+      return;
+    }
+    const off = r.meta && r.meta.hostOff;
+    if (off && now - off > AWAY_MS) { NET.remove(roomPath()); return; } // создатель не вернулся — закрываем комнату
+    netBar(off ? "У создателя комнаты пропала связь. Ждём его до минуты…" : "");
+  }, 2000);
+}
+async function ensureHostOrder(r) {
+  if (onl.order) return true;
+  chosenList = r.meta.list;
+  if (!(await ensureList())) return false;
+  onl.order = shuffle([...films]); onl.next = 0; onl.opts = films;
+  return true;
+}
+// Вернуться в комнату после перезагрузки или закрытой вкладки
+async function resumeRoom(quiet) {
+  const last = lastRoom.get();
+  if (!last || Date.now() - last.t > RESUME_MS) return false;
+  try {
+    await getNet();
+    const r = await NET.get(`rooms/${last.code}`);
+    if (!r || !r.meta || !r.state || r.state.phase === "closed") { lastRoom.set(null); return false; }
+    const host = r.meta.host === last.pid, me = r.players && r.players[last.pid];
+    if (!me && !host) { lastRoom.set(null); return false; }
+    // запись не из этой вкладки, а игрок сейчас на связи — значит, он играет в другой вкладке; не мешаем ему
+    let ownTab = false; try { ownTab = sessionStorage.getItem("lastRoom") !== null; } catch {}
+    if (!ownTab && me && !me.off) return false;
+    if (onl) await onlineLeave(true);
+    mode = "online";
+    onl = { code: last.code, pid: last.pid, host, kind: r.meta.kind, list: r.meta.list, timers: [], game: r.state.game || 0,
+      me: me ? { name: me.name, joined: me.joined, score: me.score || 0 } : { name: store.get("myName") || "Игрок", joined: NET.now(), score: 0 } };
+    applyRoomCfg(r.meta);
+    await NET.update(`rooms/${last.code}/players/${last.pid}`, { ...onl.me, off: null });
+    armPresence();
+    dropRoomLink();
+    show("lobby");
+    listenRoom();
+    if (host && (r.state.phase === "round" || r.state.phase === "reveal")) {
+      // ход игры хранился в странице создателя — переигрываем текущий раунд с новым фильмом
+      const i = Math.max(0, r.state.round);
+      if (await ensureHostOrder(r)) {
+        await NET.update(roomPath(), { [`answers/${i}`]: null, [`judged/${i}`]: null });
+        hostRound(i);
+      }
+    }
+    if (!quiet) toastMsg("Ты вернулся в комнату " + last.code);
+    return true;
+  } catch (e) { return false; }
 }
 
 // ----- подписка на комнату -----
@@ -3113,16 +3244,30 @@ function listenRoom() {
 function onRoom(r) {
   if (!onl) return;
   if (!r || !r.state || r.state.phase === "closed") return onlineClosed(onl.host ? "" : "Создатель комнаты вышел, игра закончилась");
-  if (!r.players || !r.players[onl.pid]) return onlineClosed("Ты вышел из комнаты");
+  if (!r.players || !r.players[onl.pid]) { // нас убрали, пока не было связи, — возвращаемся с прежним счётом
+    if (onl.connected !== false && !onl.readding) {
+      onl.readding = true;
+      NET.update(roomPath(`players/${onl.pid}`), { ...(onl.me || { name: "Игрок", joined: NET.now(), score: 0 }), off: null }).finally(() => { if (onl) onl.readding = false; });
+    }
+    return;
+  }
+  const mine = r.players[onl.pid];
+  onl.me = { name: mine.name, joined: mine.joined, score: mine.score || 0 };
+  lastRoom.set({ code: onl.code, pid: onl.pid, host: onl.host, t: Date.now() });
   onl.room = r; onl.list = r.meta.list; applyRoomCfg(r.meta);
-  const st = r.state, key = `${st.game}:${st.round}`;
+  const st = r.state, key = `${st.game}:${st.round}:${st.startAt || 0}`;
   renderLobby(r); renderBoard(r);
   if (st.phase === "lobby" && onl.view !== "lobby") { onl.view = "lobby"; show("lobby"); }
-  if (st.phase === "round" && onl.roundKey !== key) clientRound(st);
+  if (st.phase === "round" && onl.roundKey !== key) {
+    clientRound(st, key);
+    const a = r.answers && r.answers[st.round] && r.answers[st.round][onl.pid];
+    if (a) markAnswered(a.k); // вернулись в раунд, где уже ответили
+  }
   if (st.phase === "round") clientJudged(r);
   if (st.phase === "reveal" && onl.revealKey !== key) clientReveal(r);
   if (st.phase === "end" && onl.endKey !== String(st.game)) clientEnd(r);
   if (onl.host) hostCheck(r);
+  watchRoom();
 }
 
 function renderLobby(r) {
@@ -3132,8 +3277,8 @@ function renderLobby(r) {
   $("lbMeta").textContent = `${listTitle(m.list, m.lname)}${fltText(m.flt)} · ${onl.firstTo ? `до ${onl.firstTo} побед` : `${onl.rounds} ${plural(onl.rounds, "раунд", "раунда", "раундов")}`} · ${onl.T} секунд на кадр`;
   $("lbUrl").value = roomUrl(onl.code);
   $("lbCount").textContent = `${ps.length} из ${m.max}`;
-  setHTML($("lbPlayers"), ps.map(p => `<li>${avatar(p)}<span class="pn">${esc(p.name)}</span>${p.id === m.host ? "<small>создал комнату</small>" : ""}${p.id === onl.pid ? '<small class="you">это ты</small>' : ""}</li>`).join(""));
-  const ready = ps.length >= 2;
+  setHTML($("lbPlayers"), ps.map(p => `<li class="${p.off ? "off" : ""}">${avatar(p)}<span class="pn">${esc(p.name)}</span>${p.off ? '<small class="nolink">нет связи</small>' : ""}${p.id === m.host ? "<small>создал комнату</small>" : ""}${p.id === onl.pid ? '<small class="you">это ты</small>' : ""}</li>`).join(""));
+  const ready = ps.filter(p => !p.off).length >= 2;
   $("lbStart").classList.toggle("hidden", !onl.host);
   $("lbStart").disabled = !ready;
   $("lbStart").textContent = ready ? "Начать игру" : "Ждём хотя бы одного игрока";
@@ -3143,7 +3288,7 @@ function renderLobby(r) {
 function renderBoard(r) {
   const st = r.state, ans = (r.answers && st.round >= 0 && r.answers[st.round]) || {};
   const ps = playersArr(r).sort((a, b) => (b.score || 0) - (a.score || 0));
-  setHTML($("oBoard"), ps.map(p => `<li class="${p.id === onl.pid ? "me" : ""}">${avatar(p)}<span class="pn">${esc(p.name)}</span>${st.phase === "round" ? `<i class="st ${ans[p.id] ? "done" : ""}">${ans[p.id] ? "ответил" : "думает"}</i>` : ""}<b>${p.score || 0}</b></li>`).join(""));
+  setHTML($("oBoard"), ps.map(p => `<li class="${p.id === onl.pid ? "me" : ""} ${p.off ? "off" : ""}">${avatar(p)}<span class="pn">${esc(p.name)}</span>${p.off ? '<i class="st nolink">нет связи</i>' : st.phase === "round" ? `<i class="st ${ans[p.id] ? "done" : ""}">${ans[p.id] ? "ответил" : "думает"}</i>` : ""}<b>${p.score || 0}</b></li>`).join(""));
   const me = ps.find(p => p.id === onl.pid);
   $("oMe").textContent = me ? (onl.firstTo ? `${me.score || 0} из ${onl.firstTo}` : `${me.score || 0} ${plural(me.score || 0, "очко", "очка", "очков")}`) : "";
 }
@@ -3153,11 +3298,7 @@ const clearHostTimers = () => { (onl.timers || []).forEach(clearTimeout); onl.ti
 async function hostStartGame() {
   const r = onl.room;
   if (!r || playersArr(r).length < 2) return;
-  if (!onl.order) { // на всякий случай: хозяин переподключился
-    chosenList = r.meta.list;
-    if (!(await ensureList())) return;
-    onl.order = shuffle([...films]); onl.next = 0; onl.opts = films;
-  }
+  if (!(await ensureHostOrder(r))) return;
   onl.game = (r.state.game || 0) + 1;
   const upd = { answers: null, judged: null };
   playersArr(r).forEach(p => { upd[`players/${p.id}/score`] = 0; });
@@ -3197,7 +3338,7 @@ function hostCheck(r) {
     if (Object.keys(upd).length) NET.update(roomPath(), upd);
     if (Object.values(ans).some(a => a.k === onl.cur.correct)) return hostEndRound();
   }
-  if (Object.keys(r.players).every(pid => ans[pid])) hostEndRound();
+  if (Object.entries(r.players).filter(([, p]) => !p.off).every(([pid]) => ans[pid])) hostEndRound();
 }
 async function hostEndRound() {
   if (!onl || !onl.cur || onl.ending) return;
@@ -3227,8 +3368,8 @@ async function hostFinish() {
 function hostRematch() { NET.update(roomPath(), { state: { phase: "lobby", game: onl.game, round: -1 } }); }
 
 // ----- экран игрока -----
-function clientRound(st) {
-  onl.roundKey = `${st.game}:${st.round}`;
+function clientRound(st, key) {
+  onl.roundKey = key;
   onl.view = "round"; onl.st = st; onl.myAns = null; onl.opened = 0; onl.fview = 0; onl.started = false; onl.timeUp = false;
   show("online");
   $("oScreen").classList.remove("revealed"); $("oCurtain").classList.add("hidden");
@@ -3253,7 +3394,7 @@ function clientTick() {
   $("oCount").classList.add("hidden");
   if (!onl.started) {
     onl.started = true;
-    if (onl.myAns === null) [...$("oOptions").children].forEach(b => { b.disabled = false; });
+    if (onl.myAns === null && !onl.timeUp) [...$("oOptions").children].forEach(b => { b.disabled = false; });
     if (onl.myAns === null && !$("oMsg").textContent) $("oMsg").textContent = `Каждые ${onl.step} ${plural(onl.step, "секунду", "секунды", "секунд")} открывается новый кадр`;
   }
   const opened = Math.min(Math.floor(el / (onl.step * 1000)) + 1, st.pics.length);
@@ -3278,8 +3419,11 @@ function oFlip(i) { if (onl && onl.st && i < onl.opened) { onl.fview = i; oFrame
 function onlineAnswer(k) {
   if (!onl || onl.view !== "round" || onl.myAns !== null || !onl.started || onl.timeUp) return;
   const t = NET.now() - onl.st.startAt;
-  onl.myAns = k;
   NET.set(roomPath(`answers/${onl.st.round}/${onl.pid}`), { k, t: Math.round(t) });
+  markAnswered(k);
+}
+function markAnswered(k) {
+  onl.myAns = k;
   [...$("oOptions").children].forEach(b => { b.disabled = true; if (+b.dataset.k === k) b.classList.add("picked"); });
   $("oMsg").className = "msg";
   $("oMsg").textContent = onl.kind === "duel" ? "Ответ отправлен…" : "Ответ принят. Ждём остальных";
@@ -3296,8 +3440,8 @@ function clientJudged(r) {
   }
 }
 function clientReveal(r) {
-  const st = r.state, rv = st.reveal || {}, key = `${st.game}:${st.round}`;
-  if (onl.roundKey !== key) clientRound(st); // зашли посреди раунда
+  const st = r.state, rv = st.reveal || {}, key = `${st.game}:${st.round}:${st.startAt || 0}`;
+  if (onl.roundKey !== key) clientRound(st, key); // зашли посреди раунда
   onl.revealKey = key; onl.view = "reveal";
   clearInterval(onl.tick);
   $("oCount").classList.add("hidden");
@@ -3493,7 +3637,7 @@ async function acceptChallenge(e) {
   roundTime = ch.t || TIME; revealWait = roundTime < TIME ? 3000 : WAIT;
   beginGame(order);
 }
-if (!readChallengeLink()) readRoomLink();
+if (!readChallengeLink() && !readRoomLink()) { const last = lastRoom.get(); if (last && Date.now() - last.t < RESUME_MS) resumeRoom(); }
 const _myName = store.get("myName"); if (_myName) $("onName").value = _myName;
 // Постеры для плашек — сразу при открытии сайта, по 5 первых фильмов каждого топа
 async function prefetchTilePosters() {
