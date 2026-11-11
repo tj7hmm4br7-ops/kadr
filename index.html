@@ -355,6 +355,33 @@
   @media (max-width: 560px) { .arch-grid { grid-template-columns: repeat(3, 1fr); gap: 8px; } .arch-tile .no { font-size: 13px; } .arch-tile.new .q { font-size: 40px; }
     .arch-pill { top: 12px; right: 12px; padding: 6px 11px; } .arch-rand { width: 100%; justify-content: center; } }
   @media (prefers-reduced-motion: reduce) { .arch-tile, .arch-tile:hover { transition: none; transform: none; } }
+  /* ===== Личный кабинет ===== */
+  .topnav .nav-ic { display: inline-flex; font-style: normal; }
+  .topnav .acct-btn .av-mini { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--green); color: #0b1a10; font: 700 12px var(--sans); }
+  .pf-head { display: flex; align-items: center; gap: 18px; margin: 6px 0 22px; }
+  .pf-av { flex: none; width: 72px; height: 72px; border-radius: 50%; display: grid; place-items: center; font: 700 32px var(--serif); color: #0b1a10; background: var(--green); }
+  .pf-name { font: 700 28px var(--serif); color: #fff; line-height: 1.15; }
+  .pf-sub { color: var(--dim); font-size: 14px; margin-top: 4px; }
+  .pf-nick { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+  .pf-nick input { flex: 1; min-width: 160px; max-width: 260px; }
+  .pf-sec { font: 700 20px var(--serif); color: #fff; margin: 30px 0 12px; }
+  .pf-lists { display: grid; gap: 14px; }
+  .pf-list .row { display: flex; justify-content: space-between; font-size: 14px; margin-bottom: 6px; }
+  .pf-list .row b { color: #fff; font-weight: 600; }
+  .pf-track { height: 8px; border-radius: 4px; background: var(--panel-2); overflow: hidden; }
+  .pf-track i { display: block; height: 100%; border-radius: 4px; background: var(--green); }
+  .pf-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+  .pf-note { margin-top: 34px; padding: 16px 18px; border-radius: 8px; background: var(--panel); color: var(--dim); font-size: 13px; line-height: 1.55; }
+  .pf-note b { color: var(--text); }
+  .pf-danger { background: none; color: var(--faint); text-decoration: underline; padding: 0; font-size: 13px; margin-top: 12px; }
+  .pf-danger:hover { color: var(--orange); }
+  .pf-hero { padding: 30px 26px; border-radius: 10px; background: var(--panel); margin-top: 8px; max-width: 560px; }
+  .pf-hero h2 { font: 700 30px var(--serif); color: #fff; margin: 0 0 10px; }
+  .pf-hero ul { margin: 14px 0 22px; padding-left: 20px; line-height: 1.7; }
+  .google-btn { display: inline-flex; align-items: center; gap: 10px; background: #fff; color: #1f1f1f; font: 600 15px var(--sans); padding: 12px 20px; border-radius: 6px; }
+  .google-btn:hover { background: #eef1f4; }
+  .google-btn:disabled { opacity: .6; cursor: default; }
+  .pf-sync { color: var(--faint); font-size: 12px; margin-top: 6px; }
   /* ===== Установка на телефон ===== */
   .topnav .install-btn { color: var(--orange); }
   .topnav .install-btn:hover { color: #ffa040; }
@@ -629,6 +656,7 @@
     <nav class="topnav">
       <button onclick="openAch()"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4h10v4a5 5 0 0 1-10 0z"/><path d="M7 6H4.5a2.5 2.5 0 0 0 2.6 3.4M17 6h2.5a2.5 2.5 0 0 1-2.6 3.4M12 13v4M8.5 20h7M9.5 17h5"/></svg><span>Достижения</span> <span class="nav-count" id="achCount"></span></button>
       <button onclick="openStats()"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V11M12 20V5M19 20v-6"/></svg><span>Статистика</span></button>
+      <button id="acctBtn" class="acct-btn" onclick="openProfile()" aria-label="Личный кабинет"><i id="acctIcon" class="nav-ic"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8.5" r="4"/><path d="M4.5 20.5c1.2-4 4.2-6 7.5-6s6.3 2 7.5 6"/></svg></i><span id="acctLbl">Войти</span></button>
       <button id="installBtn" class="install-btn hidden" onclick="installApp()"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M12 7.5v7M9 11.5l3 3 3-3M10.5 18.5h3"/></svg><span>Установить</span></button>
     </nav>
     <div class="bulbs"></div>
@@ -1084,6 +1112,12 @@ The Matrix 1999"></textarea>
     <h2 class="ls-title">Достижения</h2>
     <p class="hint" id="achSub"></p>
     <div class="ach-grid" id="achGrid"></div>
+  </section>
+
+  <!-- Личный кабинет -->
+  <section id="profile" class="hidden">
+    <button class="back" onclick="show('start')">← На главную</button>
+    <div id="profileBody"></div>
   </section>
 
   <!-- Статистика -->
@@ -1898,14 +1932,14 @@ const STAGE = 15; // фильмов в этапе
 // localStorage может быть недоступен — оборачиваем
 const store = {
   get(k){ try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
-  set(k,v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
+  set(k,v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch {} if (window.acctHook) window.acctHook(k); }
 };
 document.getElementById("key").value = store.get("tmdbKey") || "";
 { const v = store.get("gameLen"); if (LENS[v]) gameLen = v; }
 
 const $ = id => document.getElementById(id);
 const show = s => {
-  ["start","friendsHub","setup","myLists","listScreen","stages","game","end","daily","archive","handover","chIntro","achScreen","statsScreen","joinScreen","lobby","online","oend"].forEach(x => $(x).classList.toggle("hidden", x !== s));
+  ["start","friendsHub","setup","myLists","listScreen","stages","game","end","daily","archive","handover","chIntro","achScreen","statsScreen","profile","joinScreen","lobby","online","oend"].forEach(x => $(x).classList.toggle("hidden", x !== s));
   document.querySelector(".marquee").classList.toggle("compact", s === "game" || s === "daily" || s === "handover" || s === "online");
   if (s === "start") updateAchCount();
   if (s === "setup" || s === "start") { renderDailyCard(); renderTiles(); }
@@ -3528,6 +3562,9 @@ document.addEventListener("keydown", e => {
 // ===================== ТАБЛИЦА ДНЯ =====================
 // Общая для всех таблица «Фильма дня» в Firebase (REST, без библиотеки). Игрок сам решает, добавлять ли результат
 const UID = (() => { let id = store.get("uid"); if (!id) { id = Math.random().toString(36).slice(2, 12); store.set("uid", id); } return id; })();
+// В таблице фильма дня: с аккаунтом — один результат на человека, без аккаунта — на устройство
+const boardId = () => (acct && acct.uid) || UID;
+const isMe = id => id === UID || !!(acct && id === acct.uid);
 const DB_URL = FIREBASE_CONFIG && FIREBASE_CONFIG.databaseURL;
 
 // ===================== АНОНИМНАЯ СТАТИСТИКА =====================
@@ -3549,6 +3586,267 @@ function track(ev) {
 }
 const isStandalone = () => (window.matchMedia && matchMedia("(display-mode: standalone)").matches) || navigator.standalone === true;
 try { if (!sessionStorage.getItem("sv")) { sessionStorage.setItem("sv", 1); track(isStandalone() ? "app_open" : "visit"); } } catch { track("visit"); }
+
+
+// ===================== ЛИЧНЫЙ КАБИНЕТ =====================
+// Вход через Google (Firebase Authentication). Прогресс из браузера хранится в базе: users/{uid}/d/{ключ} = JSON.
+// В базу не попадают почта и имя из Google — только ник, который игрок выбрал сам, и игровой прогресс.
+let acct = null;              // { uid, email, gname } — пока вошёл
+let AUTH = null, acctDB = null, acctBusy = false, acctSyncedAt = 0;
+const SYNC_KEY = k => /^(stats|ach|daily_streak|arch_played|myName|duelNames|gameLen|filters|lastList|custom_lists)$/.test(k) || /^(daily_\d{4}-\d\d-\d\d|seen_\w+|stage_\w+_\d+)$/.test(k);
+const MOCK_AUTH = /[?&]auth=mock/.test(location.search); // для проверки без настоящего Google
+const acctPending = new Set(); let acctTimer = null;
+
+async function loadFirebaseLibs(parts) {
+  const V = "10.12.2";
+  for (const base of [`https://www.gstatic.com/firebasejs/${V}`, `https://cdn.jsdelivr.net/npm/firebase@${V}`]) {
+    try {
+      if (!window.firebase) await loadScript(`${base}/firebase-app-compat.js`);
+      for (const part of parts) if (!window.firebase[part]) await loadScript(`${base}/firebase-${part}-compat.js`);
+      return true;
+    } catch (e) {}
+  }
+  return false;
+}
+// Хранилище аккаунта: настоящая база или (для проверки) имитация в localStorage
+function mockDB() {
+  const all = () => { try { return JSON.parse(localStorage.getItem("__mockdb") || "{}"); } catch { return {}; } };
+  const save = d => localStorage.setItem("__mockdb", JSON.stringify(d));
+  return {
+    get: async uid => (all()[uid] || {}).d || {},
+    put: async (uid, map) => { const d = all(); d[uid] = d[uid] || { d: {} }; Object.entries(map).forEach(([k, v]) => { if (v === null) delete d[uid].d[k]; else d[uid].d[k] = v; }); save(d); },
+    drop: async uid => { const d = all(); delete d[uid]; save(d); },
+  };
+}
+async function getAuth() {
+  if (AUTH) return AUTH;
+  if (MOCK_AUTH) {
+    const listeners = [];
+    const cur = () => { try { return JSON.parse(localStorage.getItem("__mockuser")); } catch { return null; } };
+    AUTH = {
+      onAuthStateChanged: cb => { listeners.push(cb); setTimeout(() => cb(cur())); },
+      signIn: async () => { const u = { uid: "mock" + (localStorage.getItem("__mockid") || "user1"), email: "test@example.com", displayName: "Тест Тестов" }; localStorage.setItem("__mockuser", JSON.stringify(u)); listeners.forEach(cb => cb(u)); },
+      signOut: async () => { localStorage.removeItem("__mockuser"); listeners.forEach(cb => cb(null)); },
+      deleteUser: async () => { localStorage.removeItem("__mockuser"); listeners.forEach(cb => cb(null)); },
+    };
+    acctDB = mockDB();
+    return AUTH;
+  }
+  if (!(await loadFirebaseLibs(["database", "auth"])) || !window.firebase.auth) throw new Error("Не получилось загрузить вход. Проверь интернет и обнови страницу");
+  const app = firebase.apps.length ? firebase.app() : firebase.initializeApp(FIREBASE_CONFIG);
+  const fa = firebase.auth(app); fa.languageCode = "ru";
+  const db = firebase.database(app);
+  const provider = () => new firebase.auth.GoogleAuthProvider().setCustomParameters({ prompt: "select_account" });
+  AUTH = {
+    onAuthStateChanged: cb => fa.onAuthStateChanged(cb),
+    signIn: () => fa.signInWithPopup(provider()),
+    signOut: () => fa.signOut(),
+    deleteUser: async () => {
+      try { await fa.currentUser.delete(); }
+      catch (e) { if (e.code === "auth/requires-recent-login") { await fa.currentUser.reauthenticateWithPopup(provider()); await fa.currentUser.delete(); } else throw e; }
+    },
+  };
+  acctDB = {
+    get: async uid => (await db.ref(`users/${uid}/d`).get()).val() || {},
+    put: (uid, map) => db.ref(`users/${uid}/d`).update(map),
+    drop: uid => db.ref(`users/${uid}`).remove(),
+  };
+  return AUTH;
+}
+function startAuth() {
+  return getAuth().then(a => { a.onAuthStateChanged(onAuthUser); return a; });
+}
+// Пользователь вошёл или вышел
+async function onAuthUser(u) {
+  if (!u) {
+    const was = acct; acct = null; window.acctHook = null;
+    if (was) { // вышел: убираем прогресс аккаунта из браузера — он сохранён в аккаунте
+      Object.keys(localStorage).filter(SYNC_KEY).forEach(k => localStorage.removeItem(k));
+      store.set("acctLinked", null);
+    }
+    renderAcctBtn(); updateAchCount(); renderDailyCard();
+    if (!$("profile").classList.contains("hidden")) renderProfile();
+    return;
+  }
+  acct = { uid: u.uid, email: u.email || "", gname: u.displayName || "" };
+  await acctMerge();
+  window.acctHook = k => { if (acct && SYNC_KEY(k) && !acctBusy) { acctPending.add(k); clearTimeout(acctTimer); acctTimer = setTimeout(acctPush, 1500); } };
+  renderAcctBtn(); updateAchCount(); renderDailyCard();
+  if (!$("profile").classList.contains("hidden")) renderProfile();
+}
+// Отправить изменения в аккаунт
+async function acctPush() {
+  if (!acct || !acctPending.size) return;
+  const map = {};
+  acctPending.forEach(k => { const v = localStorage.getItem(k); map[k] = v === null ? null : v; });
+  acctPending.clear();
+  try { await acctDB.put(acct.uid, map); acctSyncedAt = Date.now(); } catch (e) { Object.keys(map).forEach(k => acctPending.add(k)); }
+}
+addEventListener("pagehide", () => { if (acctPending.size) acctPush(); });
+
+// Объединяем прогресс из браузера и из аккаунта, ничего не теряя
+function mergeVal(k, a, b) {
+  if (a == null) return b; if (b == null) return a;
+  if (k === "ach") { const r = { ...b }; Object.entries(a).forEach(([id, t]) => { r[id] = r[id] ? Math.min(r[id], t) : t; }); return r; }
+  if (k === "daily_streak") { const n = (a.last || "") >= (b.last || "") ? a : b; return { ...n, best: Math.max(a.best || 0, b.best || 0) }; }
+  if (k.startsWith("daily_")) { if (a.done !== b.done) return a.done ? a : b; return (a.guesses || []).length >= (b.guesses || []).length ? a : b; }
+  if (k.startsWith("seen_")) { const r = [...b.filter(x => !a.includes(x)), ...a]; return r.slice(-1000); }
+  if (k.startsWith("stage_")) return (a.score || 0) >= (b.score || 0) ? a : b;
+  if (k === "arch_played") return Math.max(a, b);
+  if (k === "stats") return deepMax(a, b);
+  return a; // настройки и имена — как на этом устройстве
+}
+function deepMax(a, b, key) {
+  if (Array.isArray(a) && Array.isArray(b)) {
+    if (key === "ids" || key === "ours") return [...new Set([...b, ...a])];
+    if (a.every(x => typeof x === "number") && b.every(x => typeof x === "number") && (key === "frames" || key === "dist" || a.length === 2))
+      return a.map((x, i) => Math.max(x || 0, b[i] || 0));
+    return [...new Set([...b, ...a])];
+  }
+  if (typeof a === "number" && typeof b === "number") return key === "fastest" ? Math.min(a, b) : Math.max(a, b);
+  if (a && b && typeof a === "object" && typeof b === "object") {
+    const r = {}; new Set([...Object.keys(a), ...Object.keys(b)]).forEach(k => { r[k] = deepMax(a[k], b[k], k); }); return r;
+  }
+  if (typeof a === "string" && typeof b === "string") return a > b ? a : b;
+  return a ?? b;
+}
+async function acctMerge() {
+  acctBusy = true;
+  try {
+    const remote = await acctDB.get(acct.uid);
+    const keys = new Set([...Object.keys(remote), ...Object.keys(localStorage).filter(SYNC_KEY)]);
+    const up = {};
+    keys.forEach(k => {
+      let loc = null, rem = null;
+      try { loc = JSON.parse(localStorage.getItem(k)); } catch {}
+      try { rem = remote[k] != null ? JSON.parse(remote[k]) : null; } catch {}
+      const val = mergeVal(k, loc, rem);
+      if (val == null) return;
+      const js = JSON.stringify(val);
+      if (localStorage.getItem(k) !== js) localStorage.setItem(k, js);
+      if (remote[k] !== js) up[k] = js;
+    });
+    if (Object.keys(up).length) await acctDB.put(acct.uid, up);
+    store.set("acctLinked", acct.uid);
+    acctSyncedAt = Date.now();
+  } catch (e) { console.warn("sync", e); }
+  acctBusy = false;
+}
+
+async function acctSignIn() {
+  const btn = $("gBtn"); if (btn) { btn.disabled = true; btn.textContent = "Открываю Google…"; }
+  try {
+    await startAuth();
+    await AUTH.signIn();
+    track("login");
+    toastMsg("Ты вошёл. Прогресс теперь сохраняется в аккаунте");
+  } catch (e) {
+    const code = e && e.code || "";
+    const msg = code === "auth/popup-closed-by-user" || code === "auth/cancelled-popup-request" ? "" :
+      code === "auth/popup-blocked" ? "Браузер заблокировал окно входа. Разреши всплывающие окна для сайта и попробуй ещё раз" :
+      code === "auth/unauthorized-domain" ? "Вход с этого адреса пока не разрешён" :
+      code === "auth/network-request-failed" ? "Нет связи с Google. Проверь интернет" :
+      (e && e.message) || "Не получилось войти";
+    if (msg) toastMsg(msg, true);
+  }
+  renderProfile();
+}
+async function acctSignOut() {
+  await acctPush();
+  try { await AUTH.signOut(); } catch {}
+  toastMsg("Ты вышел из аккаунта. Прогресс сохранён — войди снова, чтобы его вернуть");
+}
+async function acctDelete() {
+  if (!acct) return;
+  if (!confirm("Удалить аккаунт и весь прогресс в нём? Это нельзя отменить.")) return;
+  const uid = acct.uid;
+  try {
+    await acctDB.drop(uid);
+    await AUTH.deleteUser();
+    toastMsg("Аккаунт удалён");
+  } catch (e) { toastMsg("Не получилось удалить аккаунт: " + ((e && e.message) || "ошибка"), true); }
+}
+function saveNick() {
+  const v = $("pfNick").value.trim().slice(0, 20);
+  if (!v) return;
+  store.set("myName", v);
+  toastMsg("Ник сохранён");
+  renderProfile();
+}
+
+function renderAcctBtn() {
+  const name = store.get("myName") || (acct && acct.gname.split(" ")[0]) || "";
+  $("acctIcon").innerHTML = acct
+    ? `<span class="av-mini">${esc((name || "?").slice(0, 1).toUpperCase())}</span>`
+    : `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8.5" r="4"/><path d="M4.5 20.5c1.2-4 4.2-6 7.5-6s6.3 2 7.5 6"/></svg>`;
+  $("acctLbl").textContent = acct ? "Профиль" : "Войти";
+}
+function openProfile() { show("profile"); window.scrollTo(0, 0); renderProfile(); if (store.get("acctLinked") || MOCK_AUTH) startAuth().catch(() => {}); }
+
+async function listProgress() {
+  await dataReady;
+  const ids = new Set(getStats().ids);
+  return ["imdb", "letterboxd", "kinopoisk"].map(l => {
+    const fids = new Set(LISTS[l].map(e => { const [title, year, imdbId, ruTitle] = e; const ck = imdbId || (ruTitle ? "kp|" + ruTitle + "|" + year : title + "|" + year); return cache[ck] && cache[ck].id; }).filter(Boolean));
+    let got = 0; fids.forEach(id => { if (ids.has(id)) got++; });
+    return { l, got, total: LISTS[l].length };
+  });
+}
+async function renderProfile() {
+  const box = $("profileBody");
+  if (!acct) {
+    box.innerHTML = `<div class="pf-hero">
+      <h2>Личный кабинет</h2>
+      <p class="hint" style="margin:0">Войди, чтобы прогресс не терялся и был на всех твоих устройствах.</p>
+      <ul>
+        <li>статистика, достижения и серия фильма дня сохраняются в аккаунте;</li>
+        <li>зашёл с телефона — всё на месте;</li>
+        <li>одно имя в таблице фильма дня и в комнатах.</li>
+      </ul>
+      ${inTelegram ? `<p class="msg err" style="margin:0 0 16px">Google не разрешает входить из встроенного браузера Телеграма. Открой сайт в Safari или Chrome: <b>${isIOS ? "⋯" : "⋮"} → «Открыть в браузере»</b>.</p>` : ""}
+      <button class="google-btn" id="gBtn" onclick="acctSignIn()">Войти через Google</button>
+      <p class="pf-sync" style="margin-top:14px">Играть можно и без входа — всё будет работать как сейчас.</p>
+    </div>
+    <div class="pf-note"><b>Что мы храним.</b> Ник, который ты выберешь, и игровой прогресс. Почта и имя из Google в базу игры не попадают: их видит только система входа Google и Firebase. Аккаунт можно удалить в любой момент вместе со всеми данными.</div>`;
+    return;
+  }
+  const st = getStats(), streak = store.get("daily_streak") || { count: 0, best: 0 };
+  const games = Object.values(st.games).reduce((a, b) => a + b, 0);
+  const achN = Object.keys(store.get("ach") || {}).length;
+  const nick = store.get("myName") || "";
+  const shown = nick || acct.gname.split(" ")[0] || "Игрок";
+  box.innerHTML = `<div class="pf-head">
+      <div class="pf-av" aria-hidden="true">${esc(shown.slice(0, 1).toUpperCase())}</div>
+      <div style="flex:1;min-width:0">
+        <div class="pf-name">${esc(shown)}</div>
+        <div class="pf-sub">Вход через Google${acct.email ? ": " + esc(acct.email) : ""}</div>
+        <div class="pf-sync" id="pfSync">${acctSyncedAt ? "Прогресс сохранён в аккаунте" : "Сохраняю прогресс…"}</div>
+      </div>
+    </div>
+    <label class="hint" for="pfNick" style="display:block;margin:0 0 4px">Ник — его видят в таблице фильма дня и в комнатах</label>
+    <div class="pf-nick"><input id="pfNick" type="text" maxlength="20" value="${esc(nick)}" placeholder="Например, Егор" autocomplete="off"><button class="secondary" onclick="saveNick()">Сохранить</button></div>
+    <div class="stat-tiles">
+      <div class="stat"><b>${games}</b><span>${plural(games, "игра сыграна", "игры сыграно", "игр сыграно")}</span></div>
+      <div class="stat"><b>${st.ids.length}</b><span>${plural(st.ids.length, "фильм угадан", "фильма угадано", "фильмов угадано")}</span></div>
+      <div class="stat"><b>${streak.count || 0}</b><span>дней подряд в фильме дня, лучшая серия ${streak.best || 0}</span></div>
+      <div class="stat"><b>${achN}/${ACH.length}</b><span>достижений</span></div>
+    </div>
+    <h3 class="pf-sec">Пройдено по топам</h3>
+    <div class="pf-lists" id="pfLists"><p class="hint">Считаю…</p></div>
+    <div class="pf-actions">
+      <button class="secondary" onclick="openAch()">Достижения</button>
+      <button class="secondary" onclick="openStats()">Подробная статистика</button>
+      <button class="secondary" onclick="acctSignOut()">Выйти</button>
+    </div>
+    <div class="pf-note"><b>Что мы храним.</b> Ник и игровой прогресс. Почта и имя из Google в базу игры не попадают. <br><button class="pf-danger" onclick="acctDelete()">Удалить аккаунт и все данные</button></div>`;
+  const rows = await listProgress();
+  const el = $("pfLists"); if (!el) return;
+  el.innerHTML = rows.map(r => `<div class="pf-list"><div class="row"><b>${listTitle(r.l)}</b><span>${r.got} из ${r.total}</span></div>
+    <div class="pf-track" role="progressbar" aria-valuenow="${r.got}" aria-valuemin="0" aria-valuemax="${r.total}" aria-label="${listTitle(r.l)}"><i style="width:${Math.max(r.got ? 1.5 : 0, r.got / r.total * 100)}%"></i></div></div>`).join("");
+}
+// Уже входил на этом устройстве — восстанавливаем вход в фоне
+if (store.get("acctLinked") || (MOCK_AUTH && localStorage.getItem("__mockuser"))) startAuth().catch(() => {});
+renderAcctBtn();
 
 // ===================== УСТАНОВКА НА ТЕЛЕФОН =====================
 let installPrompt = null;
@@ -3600,14 +3898,14 @@ async function loadBoard() {
     data = (await r.json()) || {};
   } catch (e) { body.textContent = "Не получилось загрузить таблицу. Проверь интернет"; return; }
   const all = Object.entries(data).map(([id, v]) => ({ id, ...v })).filter(v => v && v.name && v.tries);
-  const mine = all.find(v => v.id === UID);
+  const mine = all.find(v => isMe(v.id));
   if (!all.length) body.innerHTML = dArchive ? `<p class="hint" style="margin:0">В тот день никто не добавил результат.</p>` : `<p class="hint" style="margin:0">Ты первый сегодня — добавь результат, и другие увидят его.</p>`;
   else {
     const won = all.filter(v => v.won), pct = Math.round(won.length / all.length * 100);
     const dist = [1, 2, 3, 4, 5, 6].map(k => won.filter(v => v.tries === k).length);
     const avg = won.length ? (won.reduce((a, v) => a + v.tries, 0) / won.length).toFixed(1) : "—";
     const top = [...all].sort((a, b) => (b.won ? 1 : 0) - (a.won ? 1 : 0) || a.tries - b.tries || (a.t || 0) - (b.t || 0)).slice(0, 10);
-    const myPlace = mine ? [...all].sort((a, b) => (b.won ? 1 : 0) - (a.won ? 1 : 0) || a.tries - b.tries || (a.t || 0) - (b.t || 0)).findIndex(v => v.id === UID) + 1 : 0;
+    const myPlace = mine ? [...all].sort((a, b) => (b.won ? 1 : 0) - (a.won ? 1 : 0) || a.tries - b.tries || (a.t || 0) - (b.t || 0)).findIndex(v => isMe(v.id)) + 1 : 0;
     body.innerHTML = `<div class="lb-sum">
         <div><b>${all.length}</b><span>${plural(all.length, "человек сыграл", "человека сыграли", "человек сыграли")}</span></div>
         <div><b>${pct}%</b><span>угадали</span></div>
@@ -3616,7 +3914,7 @@ async function loadBoard() {
       </div>
       <p class="hint" style="margin:0 0 6px">С какой попытки угадывали ${dArchive ? "в тот день" : "сегодня"}</p>
       ${barsHtml(dist.map((v, i) => ({ lbl: `${i + 1}-я`, v, txt: String(v) })).concat([{ lbl: "не угадали", v: all.length - won.length, txt: String(all.length - won.length) }]), "var(--orange)")}
-      <ol class="lb-top">${top.map((v, i) => `<li class="${v.id === UID ? "me" : ""}"><span class="pl">${i + 1}</span><span class="nm">${esc(v.name)}</span>
+      <ol class="lb-top">${top.map((v, i) => `<li class="${isMe(v.id) ? "me" : ""}"><span class="pl">${i + 1}</span><span class="nm">${esc(v.name)}</span>
         ${v.streak > 1 ? `<span class="sk">${v.streak} ${plural(v.streak, "день", "дня", "дней")} подряд</span>` : "<span></span>"}
         <span class="tr ${v.won ? "" : "x"}">${v.won ? `${v.tries}/6` : "✕"}</span></li>`).join("")}</ol>`;
   }
@@ -3630,7 +3928,7 @@ async function dJoinBoard(e) {
   if (!name) { $("dName").focus(); return; }
   const entry = { name, tries: daily.guesses.length, won: !!daily.won, t: daily.finishedAt || Date.now(), streak: streakNow() };
   try {
-    const r = await fetch(`${DB_URL}/daily/${daily.date}/${UID}.json`, { method: "PUT", body: JSON.stringify(entry) });
+    const r = await fetch(`${DB_URL}/daily/${daily.date}/${boardId()}.json`, { method: "PUT", body: JSON.stringify(entry) });
     if (!r.ok) throw new Error(r.status);
     toastMsg("Результат в таблице дня");
   } catch (err) { $("dBoardBody").insertAdjacentHTML("afterbegin", '<p class="msg bad" style="margin:0 0 8px">Не получилось отправить. Попробуй ещё раз позже</p>'); }
