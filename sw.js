@@ -1,7 +1,7 @@
 // Сервис-воркер: игра открывается как приложение, а уже загруженные кадры и постеры берутся из памяти телефона
-const V = "kadr-v1";
+const V = "kadr-v2";
 const IMG = "kadr-img-v1";
-const CORE = ["./", "index.html", "manifest.webmanifest", "icon.svg", "icon-192.png", "apple-touch-icon.png"];
+const CORE = ["./", "index.html", "manifest.webmanifest", "icon.svg?v=c7", "icon-192.png?v=c7", "apple-touch-icon.png?v=c7"];
 
 self.addEventListener("install", e => {
   e.waitUntil(caches.open(V).then(c => c.addAll(CORE)).then(() => self.skipWaiting()));
