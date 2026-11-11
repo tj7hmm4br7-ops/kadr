@@ -2977,8 +2977,8 @@ async function onlineCreate(kind) {
     state: { phase: "lobby", game: 0, round: -1 },
     players: { [PID]: { name, joined: now, score: 0 } },
   }));
-  NET.onDisconnectSet(`rooms/${code}/state`, { phase: "closed" });
-  NET.onDisconnectRemove(`rooms/${code}/players/${PID}`);
+  // Создатель отключился — комната удаляется целиком, у остальных это выглядит как «игра закончилась»
+  NET.onDisconnectRemove(`rooms/${code}`);
   $("onErr").textContent = "";
   listenRoom();
   show("lobby");
@@ -3027,7 +3027,7 @@ async function joinSubmit(e) {
     applyRoomCfg(r.meta);
     const me = players[PID] || {};
     await NET.update(`rooms/${code}/players/${PID}`, { name, joined: me.joined || NET.now(), score: me.score || 0 });
-    NET.onDisconnectRemove(`rooms/${code}/players/${PID}`);
+    NET.onDisconnectRemove(onl.host ? `rooms/${code}` : `rooms/${code}/players/${PID}`);
     dropRoomLink();
     listenRoom();
     show("lobby");
@@ -3059,10 +3059,13 @@ async function onlineLeave(silent) {
   stopOnline(o);
   if (o && NET) {
     try {
-      if (o.host) await NET.set(`rooms/${o.code}/state`, { phase: "closed" });
-      await NET.remove(`rooms/${o.code}/players/${o.pid}`);
-      NET.cancelDisconnect(`rooms/${o.code}/players/${o.pid}`);
-      NET.cancelDisconnect(`rooms/${o.code}/state`);
+      if (o.host) { // создатель вышел — убираем комнату из базы, чтобы не копился мусор
+        await NET.remove(`rooms/${o.code}`);
+        NET.cancelDisconnect(`rooms/${o.code}`);
+      } else {
+        await NET.remove(`rooms/${o.code}/players/${o.pid}`);
+        NET.cancelDisconnect(`rooms/${o.code}/players/${o.pid}`);
+      }
     } catch (e) {}
   }
   if (!silent) show("start");
