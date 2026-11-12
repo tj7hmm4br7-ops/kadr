@@ -1,0 +1,13 @@
+{
+  "hosting": {
+    "public": ".",
+    "ignore": ["firebase.json", ".firebaserc", "build/**", ".github/**", "**/.*", "**/node_modules/**"],
+    "headers": [
+      { "source": "img/**", "headers": [{ "key": "Cache-Control", "value": "public, max-age=2592000" }] },
+      { "source": "**/*.@(png|jpg|svg|webmanifest)", "headers": [{ "key": "Cache-Control", "value": "public, max-age=86400" }] },
+      { "source": "data/films.json", "headers": [{ "key": "Cache-Control", "value": "public, max-age=3600" }] },
+      { "source": "**/*.@(html|js)", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] },
+      { "source": "/", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] }
+    ]
+  }
+}
