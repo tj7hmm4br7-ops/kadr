@@ -227,7 +227,7 @@
   .chips { display: flex; flex-wrap: wrap; gap: 6px; }
   .chips button { padding: 6px 12px; border-radius: 16px; font-size: 13px; background: var(--panel-2); color: var(--dim); }
   .chips button:hover { color: var(--text); }
-  .chips button[aria-checked="true"] { background: var(--text); color: var(--bg); }
+  .chips button[aria-checked="true"], .chips button[aria-pressed="true"] { background: var(--text); color: var(--bg); }
   .modes { grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
   .modes button:nth-child(4) { --c: #b07cff; }
   .modes button:nth-child(5) { --c: var(--faint); }
@@ -865,15 +865,15 @@ The Matrix 1999"></textarea>
         <div class="fp-body">
           <h4>Сложность</h4>
           <p class="hint" style="margin:0 0 8px">Насколько известен фильм: лёгкая — самые популярные в списке, сложная — наименее известные</p>
-          <div class="chips" data-filter="diff" role="radiogroup" aria-label="Сложность">
+          <div class="chips" data-filter="diff" role="group" aria-label="Сложность">
             <button data-v="all">Любая</button><button data-v="easy">Лёгкая</button><button data-v="mid">Средняя</button><button data-v="hard">Сложная</button>
           </div>
           <h4>Годы</h4>
-          <div class="chips" data-filter="era" role="radiogroup" aria-label="Годы">
+          <div class="chips" data-filter="era" role="group" aria-label="Годы">
         <button data-v="all">Любые годы</button><button data-v="pre70">До 1970</button><button data-v="y70">1970–1999</button><button data-v="y00">2000–2014</button><button data-v="y15">2015 и новее</button>
           </div>
           <h4>Жанр</h4>
-          <div class="chips" data-filter="genre" role="radiogroup" aria-label="Жанр">
+          <div class="chips" data-filter="genre" role="group" aria-label="Жанр">
         <button data-v="all">Любой жанр</button><button data-v="drama">Драма</button><button data-v="comedy">Комедия</button><button data-v="crime">Криминал</button><button data-v="thriller">Триллер</button><button data-v="scifi">Фантастика</button><button data-v="anim">Анимация</button><button data-v="war">Военный</button>
           </div>
           <h4>Время на ответ</h4>
@@ -2080,24 +2080,52 @@ const ORIGIN_LANGS = {
   zh: ["zh", "cn"], in: ["hi", "ta", "te", "ml", "kn", "bn", "mr"], nordic: ["sv", "da", "no", "nb", "fi", "is"],
 };
 const OUR_LANGS = ORIGIN_LANGS.ru;
-let flt = Object.assign({ diff: "all", era: "all", genre: "all", time: "all" }, store.get("filters") || {});
-flt.origin = "all"; // фильтр по стране убран
-// Время на ответ: «all» — стандартное для режима
-const timeFor = base => (flt.time && flt.time !== "all" ? +flt.time : base);
+const FILTER_VALUES = { diff: ["easy", "mid", "hard"], era: Object.keys(ERAS), genre: Object.keys(GENRES) };
+function readFilters(saved = {}) {
+  const filters = { time: ["30", "15", "10"].includes(saved.time) ? saved.time : "all" };
+  for (const [key, allowed] of Object.entries(FILTER_VALUES)) {
+    const value = saved[key];
+    const values = Array.isArray(value) ? value : [value];
+    filters[key] = [...new Set(values.filter(v => v !== "all" && allowed.includes(v)))];
+  }
+  return filters;
+}
+let flt = readFilters(store.get("filters") || {});
+const timeFor = base => flt.time === "all" ? base : +flt.time;
 function passes(f) {
-  if (flt.diff !== "all" && f.tier !== flt.diff) return false;
-  const [a, b] = ERAS[flt.era];
-  if (f.year < a || f.year > b) return false;
-  if (GENRES[flt.genre] && !(f.genres || []).includes(GENRES[flt.genre])) return false;
-  return true;
+  if (flt.diff.length && !flt.diff.includes(f.tier)) return false;
+  if (flt.era.length && !flt.era.some(era => {
+    const [start, end] = ERAS[era];
+    return f.year >= start && f.year <= end;
+  })) return false;
+  return !flt.genre.length || flt.genre.some(genre => (f.genres || []).includes(GENRES[genre]));
 }
 const pool = () => films.filter(passes);
 function renderChips() {
-  document.querySelectorAll(".chips").forEach(g => g.querySelectorAll("button").forEach(b => {
-    b.type = "button"; b.setAttribute("role", "radio");
-    b.setAttribute("aria-checked", String(flt[g.dataset.filter] === b.dataset.v));
-    b.onclick = () => { flt[g.dataset.filter] = b.dataset.v; store.set("filters", flt); renderChips(); updateFilterInfo(); };
-  }));
+  document.querySelectorAll(".chips").forEach(group => {
+    const key = group.dataset.filter;
+    const multi = key in FILTER_VALUES;
+    group.querySelectorAll("button").forEach(button => {
+      const value = button.dataset.v;
+      button.type = "button";
+      if (multi) {
+        const selected = value === "all" ? !flt[key].length : flt[key].includes(value);
+        button.setAttribute("aria-pressed", String(selected));
+      } else {
+        button.setAttribute("role", "radio");
+        button.setAttribute("aria-checked", String(flt[key] === value));
+      }
+      button.onclick = () => {
+        if (!multi) flt[key] = value;
+        else if (value === "all") flt[key] = [];
+        else if (flt[key].includes(value)) flt[key] = flt[key].filter(v => v !== value);
+        else flt[key] = [...flt[key], value];
+        store.set("filters", flt);
+        renderChips();
+        updateFilterInfo();
+      };
+    });
+  });
 }
 function toggleFilters(open) {
   const p = $("filterPanel"), wasOpen = !p.classList.contains("hidden");
@@ -2105,30 +2133,34 @@ function toggleFilters(open) {
   p.classList.toggle("hidden", !willOpen);
   $("fpBackdrop").classList.toggle("hidden", !willOpen);
   $("filterBtn").setAttribute("aria-expanded", String(willOpen));
-  if (willOpen) { const first = p.querySelector('.chips button[aria-checked="true"]'); if (first) first.focus(); }
+  if (willOpen) { const first = p.querySelector('.chips button[aria-pressed="true"], .chips button[aria-checked="true"]'); if (first) first.focus(); }
   else if (wasOpen) $("filterBtn").focus();
 }
-function resetFilters() { flt = { diff: "all", era: "all", genre: "all", time: "all", origin: "all" }; store.set("filters", flt); renderChips(); updateFilterInfo(); }
+function resetFilters() { flt = readFilters(); store.set("filters", flt); renderChips(); updateFilterInfo(); }
 document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("filterPanel").classList.contains("hidden")) toggleFilters(false); });
 function filterSummary() {
-  const label = k => { const b = document.querySelector(`.chips[data-filter=${k}] button[data-v="${flt[k]}"]`); return b ? (k === "diff" ? `Сложность: ${b.textContent.toLowerCase()}` : k === "time" ? `${b.textContent} на ответ` : b.textContent) : ""; };
-  const parts = ["diff", "era", "genre", "time"].filter(k => flt[k] !== "all").map(label);
+  const parts = Object.keys(FILTER_VALUES).filter(key => flt[key].length).map(key => {
+    const labels = [...document.querySelectorAll(`.chips[data-filter="${key}"] button`)]
+      .filter(button => flt[key].includes(button.dataset.v))
+      .map(button => button.textContent).join(", ");
+    return key === "diff" ? `Сложность: ${labels.toLowerCase()}` : labels;
+  });
+  if (flt.time !== "all") {
+    const button = document.querySelector(`.chips[data-filter="time"] button[data-v="${flt.time}"]`);
+    parts.push(`${button.textContent} на ответ`);
+  }
   $("fCount").textContent = parts.length || "";
   $("fSummary").textContent = parts.length ? parts.join(" · ") : "Все фильмы списка";
 }
 function updateFilterInfo() {
   filterSummary();
   if (typeof renderLen === "function" && $("lenShort")) renderLen();
-  const any = flt.diff !== "all" || flt.era !== "all" || flt.genre !== "all";
+  const any = Object.keys(FILTER_VALUES).some(key => flt[key].length);
   $("fpApply").textContent = "Готово";
   if (films.list !== selectedList()) {
-    document.querySelectorAll('.chips[data-filter=origin] button').forEach(b => b.hidden = false);
-    $("filterInfo").textContent = any ? "Сколько фильмов подходит, станет видно после загрузки списка" : ""; return; }
-  // страны, которых нет в этом списке, прячем
-  document.querySelectorAll('.chips[data-filter=origin] button').forEach(b => {
-    const v = b.dataset.v;
-    b.hidden = v !== "all" && v !== flt.origin && !films.some(f => (ORIGIN_LANGS[v] || []).includes(f.lang));
-  });
+    $("filterInfo").textContent = any ? "Сколько фильмов подходит, станет видно после загрузки списка" : "";
+    return;
+  }
   const n = pool().length;
   $("fpApply").textContent = any ? (n ? `Показать ${n}` : "Ничего не найдено") : "Готово";
   $("filterInfo").textContent = any ? (n ? `Под фильтры подходит ${n} из ${films.length} фильмов` : "Под эти фильтры в списке нет фильмов, попробуй ослабить") : "";
