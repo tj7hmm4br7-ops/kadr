@@ -3091,7 +3091,10 @@ function localNet() {
 
 const roomPath = (p = "") => `rooms/${onl.code}${p ? "/" + p : ""}`;
 const genCode = () => Array.from({ length: 5 }, () => "ABCDEFGHJKMNPQRSTUVWXYZ23456789"[Math.floor(Math.random() * 31)]).join("");
-const roomUrl = code => `${location.href.split("#")[0]}#r=${code}`;
+function roomUrl(code) {
+  if (inTelegram) return `https://t.me/UgadayKadrBot?startapp=room_${code}`;
+  return `${location.href.split("#")[0]}#r=${code}`;
+}
 function playersArr(r) {
   return Object.entries((r && r.players) || {}).map(([id, p]) => ({ id, ...p }))
     .sort((a, b) => (a.joined || 0) - (b.joined || 0)).map((p, i) => ({ ...p, col: PCOL[i % PCOL.length] }));
@@ -3198,12 +3201,22 @@ async function joinSubmit(e) {
   } catch (err) { $("jsErr").textContent = err.message; }
 }
 function readRoomLink() {
-  const m = location.hash.match(/^#r=([A-Za-z0-9]{5})/);
-  if (!m) return false;
-  openJoin(m[1]);
+  const webInvite = location.hash.match(/^#r=([A-Za-z0-9]{5})$/);
+  const telegramInvite = telegramStartParam.match(/^room_([A-Za-z0-9]{5})$/);
+  const invite = webInvite || telegramInvite;
+  if (!invite) return false;
+  openJoin(invite[1]);
   return true;
 }
-function dropRoomLink() { if (location.hash.startsWith("#r=")) history.replaceState(null, "", location.href.split("#")[0]); }
+function dropRoomLink() {
+  const url = new URL(location.href);
+  if (url.hash.startsWith("#r=")) url.hash = "";
+  if (/^room_[A-Za-z0-9]{5}$/.test(url.searchParams.get("tgWebAppStartParam") || "")) {
+    url.searchParams.delete("tgWebAppStartParam");
+    telegramStartParam = "";
+  }
+  if (url.href !== location.href) history.replaceState(null, "", url.href);
+}
 async function shareRoom() {
   track("share_room");
   const url = roomUrl(onl.code);
@@ -3924,7 +3937,7 @@ async function renderProfile() {
         <li>одно имя в таблице фильма дня и в комнатах.</li>
       </ul>
       ${inTelegram ? `<p class="msg err" style="margin:0 0 16px">Google не разрешает входить из встроенного браузера Телеграма. Открой сайт в Safari или Chrome: <b>${isIOS ? "⋯" : "⋮"} → «Открыть в браузере»</b>.</p>` : ""}
-      <button class="google-btn" id="gBtn" onclick="acctSignIn()">Войти через Google</button>
+      ${inTelegram ? "" : `<button class="google-btn" id="gBtn" onclick="acctSignIn()">Войти через Google</button>`}
       <p class="pf-sync" style="margin-top:14px">Играть можно и без входа — всё будет работать как сейчас.</p>
     </div>
     <div class="pf-note"><b>Что мы храним.</b> Ник, который ты выберешь, и игровой прогресс. Почта и имя из Google в базу игры не попадают: их видит только система входа Google и Firebase. Аккаунт можно удалить в любой момент вместе со всеми данными.</div>`;
@@ -3973,7 +3986,9 @@ let installPrompt = null;
 const UA = navigator.userAgent;
 const isIOS = /iPhone|iPad|iPod/.test(UA) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 const isAndroid = /Android/.test(UA);
-const inTelegram = /Telegram/i.test(UA) || !!window.TelegramWebview || !!window.TelegramWebviewProxy;
+let telegramStartParam = new URLSearchParams(location.search).get("tgWebAppStartParam") || "";
+const inTelegram = /Telegram/i.test(UA) || !!window.TelegramWebview || !!window.TelegramWebviewProxy ||
+  /(?:^#|&)tgWebAppData=/.test(location.hash) || !!telegramStartParam;
 function refreshInstallBtn() {
   $("installBtn").classList.toggle("hidden", isStandalone() || !(installPrompt || isIOS || isAndroid));
 }
