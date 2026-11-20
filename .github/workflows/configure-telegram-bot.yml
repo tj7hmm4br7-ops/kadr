@@ -1,0 +1,61 @@
+name: Configure Telegram game bot
+on:
+  push:
+    branches: [codex/verify-telegram-bot]
+    paths: [.github/workflows/configure-telegram-bot.yml]
+
+permissions: {}
+
+jobs:
+  configure:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Configure and verify game bot
+        env:
+          TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          from urllib.request import Request, urlopen
+
+          token = os.environ.get("TOKEN", "")
+          if not re.fullmatch(r"[0-9]+:[A-Za-z0-9_-]+", token):
+              raise SystemExit("Bot token missing or invalid")
+
+          def call(method, **data):
+              request = Request(
+                  f"https://api.telegram.org/bot{token}/{method}",
+                  data=json.dumps(data).encode(),
+                  headers={"Content-Type": "application/json"},
+              )
+              try:
+                  with urlopen(request, timeout=12) as response:
+                      result = json.load(response)
+              except Exception:
+                  raise SystemExit(f"{method} failed") from None
+              if not result.get("ok"):
+                  raise SystemExit(f"{method} was rejected")
+              return result["result"]
+
+          bot = call("getMe")
+          if bot.get("username", "").lower() != "ugadaykadrbot":
+              raise SystemExit("Unexpected bot username")
+          game_url = "https://tj7hmm4br7-ops.github.io/kadr/"
+          menu = {"type": "web_app", "text": "Играть", "web_app": {"url": game_url}}
+          description = "Угадывай фильмы по кадрам, играй в «Фильм дня» и собирай друзей в онлайн-комнатах. Нажми «Играть», чтобы открыть игру прямо в Telegram."
+          short = "Угадай фильм по кадру. Играй один или с друзьями прямо в Telegram."
+          if call("getChatMenuButton") != menu:
+              call("setChatMenuButton", menu_button=menu)
+          if call("getMyDescription").get("description") != description:
+              call("setMyDescription", description=description)
+          if call("getMyShortDescription").get("short_description") != short:
+              call("setMyShortDescription", short_description=short)
+          if call("getChatMenuButton") != menu or call("getMyDescription").get("description") != description or call("getMyShortDescription").get("short_description") != short:
+              raise SystemExit("Could not verify all bot settings")
+          print("Verified menu and descriptions for @UgadayKadrBot")
+          print("Main Mini App:", "enabled" if bot.get("has_main_web_app") else "not reported")
+          print("Webhook:", "configured" if call("getWebhookInfo").get("url") else "not configured")
+          PY
