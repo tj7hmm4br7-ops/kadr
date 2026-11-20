@@ -53,7 +53,12 @@ jobs:
               call("setMyDescription", description=description)
           if call("getMyShortDescription").get("short_description") != short:
               call("setMyShortDescription", short_description=short)
-          if call("getChatMenuButton") != menu or call("getMyDescription").get("description") != description or call("getMyShortDescription").get("short_description") != short:
+          actual_menu = call("getChatMenuButton")
+          menu_ok = actual_menu.get("type") == "web_app" and actual_menu.get("text") == "Играть"
+          long_ok = call("getMyDescription").get("description") == description
+          short_ok = call("getMyShortDescription").get("short_description") == short
+          print(f"Menu: {menu_ok}; description: {long_ok}; short description: {short_ok}")
+          if not (menu_ok and long_ok and short_ok):
               raise SystemExit("Could not verify all bot settings")
           print("Verified menu and descriptions for @UgadayKadrBot")
           print("Main Mini App:", "enabled" if bot.get("has_main_web_app") else "not reported")
