@@ -1,0 +1,36 @@
+name: Verify Telegram bot connection
+on:
+  push:
+    branches: [codex/verify-telegram-bot]
+    paths: [.github/workflows/verify-telegram-bot.yml]
+
+permissions: {}
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Confirm bot identity with getMe
+        env:
+          TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          from urllib.request import urlopen
+
+          token = os.environ.get("TOKEN", "")
+          if not re.fullmatch(r"[0-9]+:[A-Za-z0-9_-]+", token):
+              raise SystemExit("TELEGRAM_BOT_TOKEN is missing or has an invalid format")
+          try:
+              with urlopen(f"https://api.telegram.org/bot{token}/getMe", timeout=15) as response:
+                  result = json.load(response)
+          except Exception:
+              raise SystemExit("Telegram getMe request failed") from None
+          bot = result.get("result", {})
+          if not result.get("ok") or not bot.get("is_bot") or bot.get("username", "").lower() != "ugadaykadrbot":
+              raise SystemExit("Telegram did not confirm the expected bot")
+          print("Verified @UgadayKadrBot")
+          PY
