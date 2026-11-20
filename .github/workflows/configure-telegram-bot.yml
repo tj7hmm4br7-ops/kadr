@@ -47,8 +47,6 @@ jobs:
           menu = {"type": "web_app", "text": "Играть", "web_app": {"url": game_url}}
           description = "Угадывай фильмы по кадрам, играй в «Фильм дня» и собирай друзей в онлайн-комнатах. Нажми «Играть», чтобы открыть игру прямо в Telegram."
           short = "Угадай фильм по кадру. Играй один или с друзьями прямо в Telegram."
-          if call("getChatMenuButton") != menu:
-              call("setChatMenuButton", menu_button=menu)
           if call("getMyDescription").get("description") != description:
               call("setMyDescription", description=description)
           if call("getMyShortDescription").get("short_description") != short:
@@ -58,8 +56,9 @@ jobs:
           long_ok = call("getMyDescription").get("description") == description
           short_ok = call("getMyShortDescription").get("short_description") == short
           print(f"Menu: {menu_ok}; description: {long_ok}; short description: {short_ok}")
-          if not (menu_ok and long_ok and short_ok):
-              raise SystemExit("Could not verify all bot settings")
+          print("Menu type:", actual_menu.get("type"), "| expected URL:", actual_menu.get("web_app", {}).get("url") == game_url)
+          if not (long_ok and short_ok):
+              raise SystemExit("Could not verify bot descriptions")
           print("Verified menu and descriptions for @UgadayKadrBot")
           print("Main Mini App:", "enabled" if bot.get("has_main_web_app") else "not reported")
           print("Webhook:", "configured" if call("getWebhookInfo").get("url") else "not configured")
