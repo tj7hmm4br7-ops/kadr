@@ -1,0 +1,46 @@
+name: Очистка старых онлайн-комнат
+
+on:
+  schedule:
+    - cron: "23 * * * *"
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Удалить старые комнаты. Выключено — только подсчёт"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: firebase-room-cleanup
+
+jobs:
+  cleanup:
+    if: github.event_name == 'workflow_dispatch' || vars.FIREBASE_ROOM_CLEANUP_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DELETION_ENABLED: ${{ vars.FIREBASE_ROOM_CLEANUP_ENABLED }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Установить библиотеку авторизации Google
+        run: python3 -m pip install 'google-auth[requests]>=2,<3'
+      - name: Проверить комнаты
+        env:
+          ROOM_CREDENTIALS: ${{ secrets.FIREBASE_ROOM_CLEANUP_CREDENTIALS }}
+          APPLY: ${{ github.event_name == 'schedule' || inputs.apply }}
+        run: |
+          if [ -z "$ROOM_CREDENTIALS" ]; then
+            echo "::error::Configure FIREBASE_ROOM_CLEANUP_CREDENTIALS before running room cleanup"
+            exit 1
+          fi
+          export GOOGLE_APPLICATION_CREDENTIALS="$(mktemp)"
+          trap 'rm -f "$GOOGLE_APPLICATION_CREDENTIALS"' EXIT
+          printf '%s' "$ROOM_CREDENTIALS" > "$GOOGLE_APPLICATION_CREDENTIALS"
+          if [ "$APPLY" = true ] && [ "$DELETION_ENABLED" = true ]; then
+            python3 scripts/cleanup_rooms.py --apply
+          else
+            python3 scripts/cleanup_rooms.py
+          fi

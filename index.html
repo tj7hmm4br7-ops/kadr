@@ -3512,7 +3512,7 @@ function scheduleNextHostRound(i, scores) {
 async function hostFinish() {
   if (!onl) return;
   onl.finishing = true; clearHostTimers();
-  await NET.update(roomPath(), { state: { phase: "end", game: onl.game, round: -1 } });
+  await NET.update(roomPath(), { state: { phase: "end", game: onl.game, round: -1, endedAt: NET.now() } });
   onl.finishing = false;
 }
 function hostRematch() { NET.update(roomPath(), { state: { phase: "lobby", game: onl.game, round: -1 } }); }
