@@ -921,6 +921,7 @@ The Matrix 1999"></textarea>
         <button class="primary" type="submit">Начать игру</button>
       </form>
     </div>
+    <p id="onlinePoolHint" class="hint friends-only" role="status"></p>
     <div id="onErr" class="msg bad friends-only" role="status"></div>
 
     <h3 class="solo-only">Режим</h3>
@@ -2297,10 +2298,18 @@ function chooseFriends(kind) {
   show("setup");
 }
 function backFromSetup() { show(document.body.classList.contains("friends") ? "friendsHub" : "start"); }
+const MIN_ONLINE_FILMS = 6;
+const onlinePoolMessage = n => `Подходит ${n} из ${films.length} фильмов. Для онлайн-игры нужно минимум ${MIN_ONLINE_FILMS}.`;
 function renderLen() {
   const room = document.body.classList.contains("fr-room");
   $("lenShort").textContent = room ? "10 раундов" : "10 фильмов или до 5 побед";
   const loaded = films.list === selectedList(), n = loaded ? pool().length : 999;
+  const tooFew = loaded && n < MIN_ONLINE_FILMS;
+  $("onlinePoolHint").textContent = tooFew ? onlinePoolMessage(n) : "";
+  document.querySelectorAll('button[onclick^="onlineCreate("]').forEach(button => {
+    button.disabled = tooFew;
+    button.setAttribute("aria-describedby", "onlinePoolHint");
+  });
   if (loaded && LENS[gameLen].n > n) gameLen = ["long", "mid", "short"].find(k => LENS[k].n <= n) || "short";
   document.querySelectorAll(".seg button").forEach(b => {
     const k = b.dataset.len;
@@ -3113,7 +3122,7 @@ async function onlineCreate(kind) {
   try { await getNet(); } catch (e) { $("onErr").textContent = e.message; return; }
   if (!(await ensureList())) { $("onErr").textContent = $("loading").textContent || "Не получилось загрузить список"; return; }
   const p = pool();
-  if (p.length < 6) { $("onErr").textContent = "Под эти фильтры слишком мало фильмов для онлайн-игры"; return; }
+  if (p.length < MIN_ONLINE_FILMS) { $("onErr").textContent = onlinePoolMessage(p.length); return; }
   if (onl) await onlineLeave(true);
   const code = genCode(), now = NET.now();
   mode = "online"; roundRnd = Math.random;
@@ -3127,6 +3136,7 @@ async function onlineCreate(kind) {
     state: { phase: "lobby", game: 0, round: -1 },
     players: { [PID]: { name, joined: now, score: 0 } },
   }));
+  saveHostGame();
   onl.me = { name, joined: now, score: 0 };
   armPresence();
   $("onErr").textContent = "";
@@ -3217,7 +3227,9 @@ async function onlineLeave(silent) {
   if (o && NET) {
     try {
       NET.cancelDisconnect(`rooms/${o.code}/players/${o.pid}/off`);
-      if (o.host) { // создатель вышел — убираем комнату из базы, чтобы не копился мусор
+      if (o.host) {
+        localStorage.removeItem(hostGameKey(o));
+        // создатель вышел — убираем комнату из базы, чтобы не копился мусор
         NET.cancelDisconnect(`rooms/${o.code}/meta/hostOff`);
         await NET.remove(`rooms/${o.code}`);
       } else {
@@ -3292,11 +3304,33 @@ function watchRoom() {
     netBar(off ? "У создателя комнаты пропала связь. Ждём его до минуты…" : "");
   }, 2000);
 }
+// Правильный ответ хранится только у ведущего.
+function hostGameKey(room) {
+  return `hostGame:${room.code}:${room.pid}`;
+}
+function saveHostGame(startAt = null) {
+  const key = hostGameKey(onl);
+  const saved = store.get(key) || [];
+  const snapshot = {
+    order: onl.order.map(f => f.id), options: onl.opts.map(f => f.id),
+    next: onl.next, game: onl.game, startAt, cur: startAt ? onl.cur : null,
+  };
+  store.set(key, [snapshot, ...saved.slice(0, 1)]);
+}
+function readHostGame(state) {
+  const saved = store.get(hostGameKey(onl)) || [];
+  return state.phase === "lobby" ? saved[0] : saved.find(item => item.game === state.game && item.startAt === (state.startAt || null));
+}
 async function ensureHostOrder(r) {
   if (onl.order) return true;
   chosenList = r.meta.list;
   if (!(await ensureList())) return false;
-  onl.order = shuffle([...films]); onl.next = 0; onl.opts = films;
+  const saved = readHostGame(r.state);
+  const byId = new Map(films.map(f => [f.id, f]));
+  onl.order = saved ? saved.order.map(id => byId.get(id)).filter(Boolean) : shuffle([...films]);
+  onl.opts = saved ? saved.options.map(id => byId.get(id)).filter(Boolean) : films;
+  onl.next = saved ? saved.order.slice(0, saved.next).filter(id => byId.has(id)).length : 0;
+  if (!onl.order.length) { onl.order = null; return false; }
   return true;
 }
 // Вернуться в комнату после перезагрузки или закрытой вкладки
@@ -3323,11 +3357,20 @@ async function resumeRoom(quiet) {
     show("lobby");
     listenRoom();
     if (host && (r.state.phase === "round" || r.state.phase === "reveal")) {
-      // ход игры хранился в странице создателя — переигрываем текущий раунд с новым фильмом
-      const i = Math.max(0, r.state.round);
+      const st = r.state, i = st.round;
+      const saved = readHostGame(st);
       if (await ensureHostOrder(r)) {
-        await NET.update(roomPath(), { [`answers/${i}`]: null, [`judged/${i}`]: null });
-        hostRound(i);
+        if (st.phase === "reveal") {
+          scheduleNextHostRound(i, Object.values((onl.room || r).players || {}).map(p => p.score || 0));
+        } else if (saved?.cur) {
+          onl.cur = saved.cur;
+          scheduleHostDeadline(st.startAt);
+          hostCheck(onl.room || r);
+        } else {
+          // Старые комнаты не содержат данных для восстановления ответа.
+          await NET.update(roomPath(), { [`answers/${i}`]: null, [`judged/${i}`]: null });
+          hostRound(i);
+        }
       }
     }
     if (!quiet) toastMsg("Ты вернулся в комнату " + last.code);
@@ -3423,8 +3466,12 @@ async function hostRound(i) {
   onl.cur = { film, correct: opts.indexOf(film), round: i };
   onl.ending = false;
   const startAt = NET.now() + 3200;
+  saveHostGame(startAt);
   await NET.update(roomPath(), clean({ state: { phase: "round", game: onl.game, round: i, startAt, pics, options: opts.map(f => `${f.ru} (${f.year})`) } }));
-  onl.timers.push(setTimeout(hostEndRound, startAt + onl.T * 1000 - NET.now() + 400));
+  scheduleHostDeadline(startAt);
+}
+function scheduleHostDeadline(startAt) {
+  onl.timers.push(setTimeout(hostEndRound, Math.max(0, startAt + onl.T * 1000 - NET.now() + 400)));
 }
 function hostCheck(r) {
   const st = r.state, n = Object.keys(r.players || {}).length;
@@ -3456,7 +3503,10 @@ async function hostEndRound() {
   const f = onl.cur.film;
   upd.state = clean({ ...st, phase: "reveal", reveal: { correct: onl.cur.correct, pts, film: { id: f.id, ru: f.ru, orig: f.orig || "", year: f.year, poster: f.poster || "", rating: f.rating || 0, imdb: f.imdb || "" } } });
   await NET.update(roomPath(), upd);
-  const done = onl.firstTo ? Object.values(scores).some(v => v >= onl.firstTo) : i + 1 >= onl.rounds;
+  scheduleNextHostRound(i, Object.values(scores));
+}
+function scheduleNextHostRound(i, scores) {
+  const done = onl.firstTo ? scores.some(score => score >= onl.firstTo) : i + 1 >= onl.rounds;
   onl.timers.push(setTimeout(() => (done ? hostFinish() : hostRound(i + 1)), onl.reveal));
 }
 async function hostFinish() {
@@ -3627,7 +3677,8 @@ let acct = null;              // { uid, email, gname } — пока вошёл
 let AUTH = null, acctDB = null, acctBusy = false, acctSyncedAt = 0;
 const SYNC_KEY = k => /^(stats|ach|daily_streak|arch_played|myName|duelNames|gameLen|filters|lastList|custom_lists)$/.test(k) || /^(daily_\d{4}-\d\d-\d\d|seen_\w+|stage_\w+_\d+)$/.test(k);
 const MOCK_AUTH = /[?&]auth=mock/.test(location.search); // для проверки без настоящего Google
-const acctPending = new Set(); let acctTimer = null;
+const acctPending = new Set();
+let acctTimer = null, acctWrite = null, acctLeaving = false, authSubscribed = false;
 
 async function loadFirebaseLibs(parts) {
   const V = "10.12.2";
@@ -3686,7 +3737,10 @@ async function getAuth() {
   return AUTH;
 }
 function startAuth() {
-  return getAuth().then(a => { a.onAuthStateChanged(onAuthUser); return a; });
+  return getAuth().then(a => {
+    if (!authSubscribed) { a.onAuthStateChanged(onAuthUser); authSubscribed = true; }
+    return a;
+  });
 }
 // Пользователь вошёл или вышел
 async function onAuthUser(u) {
@@ -3708,11 +3762,28 @@ async function onAuthUser(u) {
 }
 // Отправить изменения в аккаунт
 async function acctPush() {
-  if (!acct || !acctPending.size) return;
-  const map = {};
-  acctPending.forEach(k => { const v = localStorage.getItem(k); map[k] = v === null ? null : v; });
+  if (acctWrite) return acctWrite;
+  if (!acct || !acctPending.size) return true;
+  const uid = acct.uid, map = {};
+  acctPending.forEach(k => { map[k] = localStorage.getItem(k); });
   acctPending.clear();
-  try { await acctDB.put(acct.uid, map); acctSyncedAt = Date.now(); } catch (e) { Object.keys(map).forEach(k => acctPending.add(k)); }
+  acctWrite = Promise.resolve().then(async () => {
+    try {
+      await acctDB.put(uid, map);
+      acctSyncedAt = Date.now();
+      if (acctPending.size && !acctLeaving) {
+        clearTimeout(acctTimer);
+        acctTimer = setTimeout(acctPush, 1500);
+      }
+      return true;
+    } catch (e) {
+      if (acct?.uid === uid) Object.keys(map).forEach(k => acctPending.add(k));
+      return false;
+    } finally {
+      acctWrite = null;
+    }
+  });
+  return acctWrite;
 }
 addEventListener("pagehide", () => { if (acctPending.size) acctPush(); });
 
@@ -3784,9 +3855,26 @@ async function acctSignIn() {
   renderProfile();
 }
 async function acctSignOut() {
-  await acctPush();
-  try { await AUTH.signOut(); } catch {}
-  toastMsg("Ты вышел из аккаунта. Прогресс сохранён — войди снова, чтобы его вернуть");
+  if (!acct || acctLeaving) return;
+  if (acctBusy) { toastMsg("Идёт синхронизация. Попробуй выйти чуть позже"); return; }
+  acctLeaving = true;
+  let timer;
+  try {
+    const timeout = new Promise(resolve => { timer = setTimeout(() => resolve(false), 8000); });
+    do {
+      if (!(await Promise.race([acctPush(), timeout]))) {
+        toastMsg("Не удалось подтвердить сохранение прогресса. Проверь связь и попробуй выйти снова");
+        return;
+      }
+    } while (acctPending.size);
+    await AUTH.signOut();
+    toastMsg("Ты вышел из аккаунта. Прогресс сохранён — войди снова, чтобы его вернуть");
+  } catch (e) {
+    toastMsg("Не удалось выйти из аккаунта. Попробуй ещё раз");
+  } finally {
+    clearTimeout(timer);
+    acctLeaving = false;
+  }
 }
 async function acctDelete() {
   if (!acct) return;
