@@ -255,9 +255,6 @@
   .list-tile[data-list=letterboxd] { --accent: var(--green); }
   .list-tile[data-list=kinopoisk] { --accent: #ff6a00; }
   .list-tile[data-list=anime] { --accent: var(--blue); }
-  .list-tiles.list-categories { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-bottom: 14px; }
-  .list-categories .list-tile { min-height: 0; }
-  @media (max-width: 480px) { .list-tiles.list-categories { grid-template-columns: 1fr; } }
   .lt-head { display: flex; align-items: center; gap: 10px; }
   .lt-icon { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 50%; color: var(--accent);
     background: color-mix(in srgb, var(--accent) 16%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent); }
@@ -808,15 +805,7 @@
 
 
     <h3>Списки</h3>
-    <div class="list-tiles list-categories">
-      <button type="button" class="list-tile" data-list="imdb" aria-expanded="false" aria-controls="movieLists" onclick="toggleMovieLists(this)">
-        <span class="lt-body"><b>Топ-250 всех оценок</b><small>IMDb, Letterboxd и Кинопоиск</small></span>
-      </button>
-      <button type="button" class="list-tile" data-list="anime" onclick="openList('anime')">
-        <span class="lt-body"><b>Топ-250 аниме</b><small>Фильмы и сериалы по рейтингу MyAnimeList</small><small class="lt-rec" id="ltr-anime"></small></span>
-      </button>
-    </div>
-    <div class="list-tiles hidden" id="movieLists">
+    <div class="list-tiles">
       <button class="list-tile" data-list="imdb" onclick="openList('imdb')">
         <span class="lt-posters" id="lt-imdb"></span>
         <span class="lt-body"><span class="lt-head"><span class="lt-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5l2.6 5.3 5.8.8-4.2 4.1 1 5.8L12 16.8l-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z"/></svg></span><span class="lt-brand">IMDb</span></span><b>Топ-250 IMDb</b><small>Главный зрительский рейтинг мира</small><small class="lt-rec" id="ltr-imdb"></small></span>
@@ -828,6 +817,10 @@
       <button class="list-tile" data-list="kinopoisk" onclick="openList('kinopoisk')">
         <span class="lt-posters" id="lt-kinopoisk"></span>
         <span class="lt-body"><span class="lt-head"><span class="lt-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 11V7.5a3 3 0 0 1 3-3h5a3 3 0 0 1 3 3V11"/><rect x="4" y="11" width="16" height="5" rx="1.5"/><path d="M6.5 16v3.5M17.5 16v3.5"/></svg></span><span class="lt-brand">Кинопоиск</span></span><b>Топ-250 Кинопоиска</b><small>Любимое кино российских зрителей, с советской классикой</small><small class="lt-rec" id="ltr-kinopoisk"></small></span>
+      </button>
+      <button type="button" class="list-tile" data-list="anime" onclick="openList('anime')">
+        <span class="lt-posters" id="lt-anime"></span>
+        <span class="lt-body"><span class="lt-head"><span class="lt-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5z"/></svg></span><span class="lt-brand">MyAnimeList</span></span><b>Топ-250 аниме</b><small>Аниме-фильмы и сериалы</small><small class="lt-rec" id="ltr-anime"></small></span>
       </button>
     </div>
 
@@ -2064,10 +2057,6 @@ function loadAnimeCatalog() {
   return animeCatalog;
 }
 const isBuiltin = k => ["imdb", "letterboxd", "kinopoisk", "anime"].includes(k);
-function toggleMovieLists(button) {
-  const opened = $("movieLists").classList.toggle("hidden") === false;
-  button.setAttribute("aria-expanded", String(opened));
-}
 // «Топ-250 IMDb» или «Любимое кино Маши» для своего списка
 const listTitle = (k, name) => k === "anime" ? "Топ-250 аниме" : isBuiltin(k) ? `Топ-250 ${LIST_NAMES[k]}` : `«${name || LIST_NAMES[k] || "Свой список"}»`;
 const listShort = (k, name) => isBuiltin(k) ? LIST_NAMES[k] : `«${name || LIST_NAMES[k] || "Свой список"}»`;
@@ -2228,9 +2217,7 @@ function openList(name) {
 }
 // Плашки списков: постеры и рекорды
 function renderTiles() {
-  const animeRecord = store.get("best_quick_anime");
-  $("ltr-anime").textContent = animeRecord != null ? `рекорд ★ ${animeRecord}` : "";
-  ["imdb", "letterboxd", "kinopoisk"].forEach(l => {
+  ["imdb", "letterboxd", "kinopoisk", "anime"].forEach(l => {
     const posters = store.get("posters_" + l) || [];
     $("lt-" + l).innerHTML = posters.slice(0, 5).map(p => `<i style="background-image:url('${POSTER(p)}')"></i>`).join("");
     const q = store.get(`best_quick_${l}`), sv = store.get(`best_survival_${l}`);
@@ -4233,6 +4220,11 @@ async function prefetchTilePosters() {
   }
 }
 prefetchTilePosters().catch(() => {});
+loadAnimeCatalog().then(rows => {
+  const posters = rows.map(entry => entry.poster).filter(Boolean).slice(0, 5);
+  store.set("posters_anime", posters);
+  renderTiles();
+}).catch(() => {});
 
 document.addEventListener("keydown", e => {
   if ($("daily").classList.contains("hidden") || e.target.tagName === "INPUT") return;
