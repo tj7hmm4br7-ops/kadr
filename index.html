@@ -254,6 +254,10 @@
   .list-tile[data-list=imdb] { --accent: #f5c518; }
   .list-tile[data-list=letterboxd] { --accent: var(--green); }
   .list-tile[data-list=kinopoisk] { --accent: #ff6a00; }
+  .list-tile[data-list=anime] { --accent: var(--blue); }
+  .list-tiles.list-categories { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-bottom: 14px; }
+  .list-categories .list-tile { min-height: 0; }
+  @media (max-width: 480px) { .list-tiles.list-categories { grid-template-columns: 1fr; } }
   .lt-head { display: flex; align-items: center; gap: 10px; }
   .lt-icon { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 50%; color: var(--accent);
     background: color-mix(in srgb, var(--accent) 16%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent); }
@@ -804,7 +808,15 @@
 
 
     <h3>Списки</h3>
-    <div class="list-tiles">
+    <div class="list-tiles list-categories">
+      <button type="button" class="list-tile" data-list="imdb" aria-expanded="false" aria-controls="movieLists" onclick="toggleMovieLists(this)">
+        <span class="lt-body"><b>Топ-250 всех оценок</b><small>IMDb, Letterboxd и Кинопоиск</small></span>
+      </button>
+      <button type="button" class="list-tile" data-list="anime" onclick="openList('anime')">
+        <span class="lt-body"><b>Топ-250 аниме</b><small>Фильмы и сериалы по рейтингу MyAnimeList</small><small class="lt-rec" id="ltr-anime"></small></span>
+      </button>
+    </div>
+    <div class="list-tiles hidden" id="movieLists">
       <button class="list-tile" data-list="imdb" onclick="openList('imdb')">
         <span class="lt-posters" id="lt-imdb"></span>
         <span class="lt-body"><span class="lt-head"><span class="lt-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5l2.6 5.3 5.8.8-4.2 4.1 1 5.8L12 16.8l-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z"/></svg></span><span class="lt-brand">IMDb</span></span><b>Топ-250 IMDb</b><small>Главный зрительский рейтинг мира</small><small class="lt-rec" id="ltr-imdb"></small></span>
@@ -1984,6 +1996,7 @@ const isLocal = p => typeof p === "string" && p.startsWith("img/");
 const RATINGS = {"kinopoisk":[8.3,8.2,8.2,8.1,8.1,8.1,8.1,8.1,8.1,8.0,8.0,8.0,8.0,8.0,7.9,7.9,7.9,7.8,7.8,7.8,7.8,7.8,7.8,7.8,7.8,7.8,7.8,7.8,7.8,7.8,7.7,7.7,7.7,7.7,7.7,7.7,7.7,7.7,7.7,7.7,7.7,7.7,7.7,7.7,7.6,7.6,7.6,7.6,7.6,7.6,7.6,7.6,7.6,7.6,7.6,7.6,7.6,7.5,7.5,7.5,7.5,7.5,7.5,7.5,7.5,7.5,7.5,7.5,7.5,7.5,7.5,7.5,7.5,7.5,7.5,7.5,7.5,7.5,7.5,7.5,7.5,7.5,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.4,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.3,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2],"imdb":[9.3,9.2,9.1,9.0,9.0,9.0,9.0,8.9,8.8,8.8,8.8,8.8,8.8,8.8,8.7,8.7,8.7,8.7,8.6,8.6,8.6,8.6,8.6,8.6,8.6,8.6,8.6,8.6,8.5,8.6,8.6,8.5,8.5,8.7,8.5,8.5,8.6,8.5,8.5,8.5,8.5,8.5,8.5,8.5,8.5,8.5,8.5,8.5,8.5,8.5,8.4,8.4,8.5,8.5,8.4,8.5,8.4,8.4,8.4,8.4,8.4,8.4,8.4,8.4,8.4,8.4,8.4,8.4,8.4,8.4,8.4,8.4,8.7,8.4,8.4,8.4,8.3,8.4,8.4,8.4,8.4,8.3,8.3,8.3,8.3,8.3,8.9,8.3,8.4,8.3,8.3,8.3,8.3,8.3,8.3,8.3,8.3,8.3,8.3,8.3,8.3,8.3,8.3,8.3,8.3,8.2,8.3,8.3,8.3,8.2,8.2,8.3,8.3,8.2,8.3,8.2,8.2,8.2,8.2,8.2,8.2,8.2,8.2,8.2,8.2,8.2,8.2,8.2,8.2,8.2,8.2,8.3,8.2,8.3,8.2,8.4,8.2,8.2,8.2,8.2,8.3,8.2,8.2,8.2,8.2,8.2,8.2,8.2,8.2,8.2,8.2,8.2,8.2,8.2,8.2,8.2,8.2,8.2,8.2,8.2,8.2,8.2,8.2,8.2,8.3,8.2,8.1,8.1,8.2,8.2,8.1,8.1,8.1,8.1,8.1,8.1,8.1,8.4,8.1,8.1,8.1,8.1,8.1,8.1,8.1,8.1,8.1,8.1,8.1,8.1,8.2,8.1,8.1,8.1,8.1,8.1,8.1,8.1,8.1,8.1,8.1,8.1,8.1,8.1,8.1,8.3,8.1,8.1,8.1,8.2,8.1,8.1,8.1,8.1,8.1,8.1,8.1,8.1,8.1,8.1,8.3,8.1,8.6,8.1,8.1,8.1,8.1,8.1,8.1,8.1,8.1,8.0,8.1,8.1,8.1,8.1,8.1,8.1,8.1,8.0,8.1,8.1,8.1,8.1,8.1,8.2,8.2,8.1,8.2,8.3],"letterboxd":[4.68,4.66,4.63,4.61,4.6,4.61,4.59,4.6,4.58,4.58,4.53,4.56,4.55,4.51,4.51,4.52,4.51,4.51,4.5,4.49,4.5,4.52,4.5,4.5,4.48,4.49,4.48,4.45,4.46,4.46,4.46,4.45,4.43,4.48,4.44,4.43,4.46,4.43,4.43,4.46,4.44,4.47,4.43,4.42,4.42,4.44,4.4,4.45,4.42,4.43,4.4,4.42,4.4,4.4,4.41,4.39,4.42,4.39,4.42,4.41,4.38,4.39,4.4,4.39,4.4,4.42,4.42,4.39,4.42,4.34,4.37,4.4,4.39,4.37,4.39,4.39,4.37,4.37,4.36,4.41,4.36,4.39,4.36,4.36,4.36,4.39,4.41,4.36,4.4,4.36,4.36,4.39,4.37,4.38,4.39,4.36,4.31,4.37,4.35,4.36,4.33,4.36,4.37,4.35,4.42,4.37,4.38,4.34,4.36,4.35,4.37,4.34,4.37,4.34,4.34,4.33,4.32,4.35,4.36,4.34,4.34,4.35,4.31,4.32,4.33,4.31,4.35,4.41,4.33,4.32,4.32,4.31,4.32,4.33,4.35,4.31,4.33,4.32,4.35,4.32,4.3,4.32,4.3,4.32,4.31,4.32,4.31,4.3,4.32,4.29,4.36,4.3,4.29,4.29,4.31,4.3,4.3,4.3,4.3,4.3,4.33,4.28,4.3,4.01,4.3,4.28,4.27,4.28,4.3,4.29,4.3,4.3,4.32,4.26,4.11,4.29,4.28,4.29,4.29,4.3,4.29,4.27,4.26,4.27,4.28,4.25,4.34,4.28,4.29,4.22,4.29,4.3,4.26,4.27,4.27,4.28,4.31,4.31,4.28,4.25,4.27,4.28,4.27,4.26,4.3,4.28,4.26,4.25,4.24,4.26,4.27,4.27,4.27,4.23,4.26,4.25,4.3,4.26,4.26,4.26,4.23,4.28,4.24,4.24,4.23,4.26,4.25,4.24,4.23,4.25,4.25,4.26,4.24,4.24,4.24,4.25,4.24,4.25,4.25,4.24,4.24,4.26,4.25,4.27,4.22,4.24,4.24,4.24,4.25,4.23]};
 // Как показывать оценку каждого сайта
 const RATE_FMT = {
+  anime: r => `<span class="rate">MyAnimeList</span> ${r.toFixed(2)} из 10`,
   imdb: r => `<span class="rate imdb">IMDb</span> ${r.toFixed(1)}`,
   kinopoisk: r => `<span class="rate kp">Кинопоиск</span> ${r.toFixed(1)}`,
   letterboxd: r => `<span class="rate lb">Letterboxd</span> ${r.toFixed(2)} из 5`,
@@ -2029,16 +2042,34 @@ async function resolve([title, year, imdbId, ruTitle, tmdbId]) {
   return film;
 }
 
-const POSTER = p => !p ? "" : isLocal(p) ? p : `https://image.tmdb.org/t/p/w185${p}`;
-const FRAME = p => isLocal(p) ? p : IMG + p;
+const isAnimeImage = p => typeof p === "string" && /^https:\/\/(?:shikimori\.io|image\.tmdb\.org|given-anime\.com|cdn\.myanimelist\.net)\//.test(p);
+const POSTER = p => !p ? "" : isLocal(p) || isAnimeImage(p) ? p : `https://image.tmdb.org/t/p/w185${p}`;
+const FRAME = p => isLocal(p) || isAnimeImage(p) ? p : IMG + p;
 const stars = n => `<span class="stars">${"★".repeat(n)}<span class="off">${"★".repeat(FRAMES - n)}</span></span>`;
 let lastPts = 0, pending = null, pendingFn = null;
 const WAIT = 5000; // сколько показываем постер перед следующим фильмом
 function goNext() { clearTimeout(pending); const f = pendingFn; pendingFn = null; if (f) f(); }
-const LIST_NAMES = { imdb: "IMDb", letterboxd: "Letterboxd", kinopoisk: "Кинопоиск" };
-const isBuiltin = k => k === "imdb" || k === "letterboxd" || k === "kinopoisk";
+const LIST_NAMES = { imdb: "IMDb", letterboxd: "Letterboxd", kinopoisk: "Кинопоиск", anime: "MyAnimeList" };
+const ANIME_ID_BASE = 1000000000;
+let animeCatalog;
+function loadAnimeCatalog() {
+  if (!animeCatalog) {
+    animeCatalog = fetch("data/anime.json", { cache: "no-cache" }).then(async response => {
+      if (!response.ok) throw new Error("Не удалось загрузить топ аниме");
+      const rows = await response.json();
+      if (!Array.isArray(rows) || rows.length !== 250) throw new Error("Топ аниме сейчас недоступен");
+      return rows;
+    }).catch(error => { animeCatalog = null; throw error; });
+  }
+  return animeCatalog;
+}
+const isBuiltin = k => ["imdb", "letterboxd", "kinopoisk", "anime"].includes(k);
+function toggleMovieLists(button) {
+  const opened = $("movieLists").classList.toggle("hidden") === false;
+  button.setAttribute("aria-expanded", String(opened));
+}
 // «Топ-250 IMDb» или «Любимое кино Маши» для своего списка
-const listTitle = (k, name) => isBuiltin(k) ? `Топ-250 ${LIST_NAMES[k]}` : `«${name || LIST_NAMES[k] || "Свой список"}»`;
+const listTitle = (k, name) => k === "anime" ? "Топ-250 аниме" : isBuiltin(k) ? `Топ-250 ${LIST_NAMES[k]}` : `«${name || LIST_NAMES[k] || "Свой список"}»`;
 const listShort = (k, name) => isBuiltin(k) ? LIST_NAMES[k] : `«${name || LIST_NAMES[k] || "Свой список"}»`;
 let chosenList = store.get("lastList") || "imdb";
 const selectedList = () => chosenList;
@@ -2047,7 +2078,19 @@ const selectedList = () => chosenList;
 async function loadList(name) {
   const list = LISTS[name];
   const loaded = [];
-  for (let i = 0; i < list.length; i += 10) {
+  if (name === "anime") {
+    $("loading").textContent = "Загружаю топ аниме…";
+    const anime = await loadAnimeCatalog();
+    for (const entry of anime) {
+      if (!entry.frames.length) continue;
+      loaded.push({
+        id: ANIME_ID_BASE + entry.mal, ru: entry.ru, en: entry.title, orig: entry.title,
+        year: entry.year, rank: entry.rank, rating: entry.rating, votes: entry.votes,
+        genres: entry.genres, poster: entry.poster, frames: entry.frames, imdb: "",
+      });
+    }
+  }
+  for (let i = 0; list && i < list.length; i += 10) {
     $("loading").textContent = `Загружаю список… ${Math.min(i+10, list.length)}/${list.length}`;
     const batch = await Promise.all(list.slice(i, i + 10).map((x, j) =>
       resolve(x).then(f => f && { ...f, rank: i + j + 1, rating: (RATINGS[name] || [])[i + j] }).catch(() => null)));
@@ -2064,7 +2107,7 @@ async function loadList(name) {
   // подсказки для режима без вариантов — все названия списка
   const opts = new Set();
   films.forEach(f => { opts.add(`${f.ru} (${f.year})`); if (f.orig && f.orig !== f.ru) opts.add(`${f.orig} (${f.year})`); });
-  $("gTitles").innerHTML = [...opts].sort((a, b) => a.localeCompare(b, "ru")).map(v => `<option value="${v.replace(/"/g, "&quot;")}">`).join("");
+  $("gTitles").innerHTML = [...opts].sort((a, b) => a.localeCompare(b, "ru")).map(v => `<option value="${esc(v)}">`).join("");
   gKnown = new Set(films.flatMap(f => [f.ru, f.orig, f.en].filter(Boolean).map(norm)));
   updateFilterInfo();
 }
@@ -2170,7 +2213,7 @@ function updateFilterInfo() {
 function openList(name) {
   toggleFilters(false);
   chosenList = name; store.set("lastList", name);
-  $("lsTitle").textContent = { imdb: "Топ-250 IMDb", letterboxd: "Топ-250 Letterboxd", kinopoisk: "Топ-250 Кинопоиска" }[name] || LIST_NAMES[name];
+  $("lsTitle").textContent = { imdb: "Топ-250 IMDb", letterboxd: "Топ-250 Letterboxd", kinopoisk: "Топ-250 Кинопоиска", anime: "Топ-250 аниме" }[name] || LIST_NAMES[name];
   const topBtn = document.querySelector(".modes button[onclick=\"startMode('top')\"] b");
   if (topBtn) topBtn.textContent = isBuiltin(name) ? "Весь топ-250" : "Весь список";
   $("listScreen").dataset.list = name;
@@ -2185,6 +2228,8 @@ function openList(name) {
 }
 // Плашки списков: постеры и рекорды
 function renderTiles() {
+  const animeRecord = store.get("best_quick_anime");
+  $("ltr-anime").textContent = animeRecord != null ? `рекорд ★ ${animeRecord}` : "";
   ["imdb", "letterboxd", "kinopoisk"].forEach(l => {
     const posters = store.get("posters_" + l) || [];
     $("lt-" + l).innerHTML = posters.slice(0, 5).map(p => `<i style="background-image:url('${POSTER(p)}')"></i>`).join("");
@@ -2881,7 +2926,7 @@ function openStats() {
     const decs = Object.keys(st.decades).map(Number).sort((a, b) => a - b);
     if (decs.length) html += `<div class="stat-sec"><h3>Точность по десятилетиям</h3><p class="hint">Доля угаданных фильмов каждого десятилетия</p>
       ${barsHtml(decs.map(d => { const [g, n] = st.decades[d]; return { lbl: `${d}-е`, v: g / n, txt: `${Math.round(g / n * 100)}%`, tip: `${d}-е: угадано ${g} из ${n}` }; }), "var(--blue)")}</div>`;
-    const ls = ["imdb", "letterboxd", "kinopoisk"].filter(l => st.lists[l]);
+    const ls = ["imdb", "letterboxd", "kinopoisk", "anime"].filter(l => st.lists[l]);
     if (ls.length) html += `<div class="stat-sec"><h3>По спискам</h3>
       ${barsHtml(ls.map(l => { const [g, n] = st.lists[l]; return { lbl: LIST_NAMES[l], v: g / n, txt: `${Math.round(g / n * 100)}%`, tip: `${LIST_NAMES[l]}: угадано ${g} из ${n}` }; }), "var(--green)")}</div>`;
     if (st.daily.played) html += `<div class="stat-sec"><h3>Фильм дня</h3>
@@ -3919,11 +3964,16 @@ function openProfile() { show("profile"); window.scrollTo(0, 0); renderProfile()
 async function listProgress() {
   await dataReady;
   const ids = new Set(getStats().ids);
-  return ["imdb", "letterboxd", "kinopoisk"].map(l => {
+  const progress = ["imdb", "letterboxd", "kinopoisk"].map(l => {
     const fids = new Set(LISTS[l].map(e => { const [title, year, imdbId, ruTitle] = e; const ck = imdbId || (ruTitle ? "kp|" + ruTitle + "|" + year : title + "|" + year); return cache[ck] && cache[ck].id; }).filter(Boolean));
     let got = 0; fids.forEach(id => { if (ids.has(id)) got++; });
     return { l, got, total: LISTS[l].length };
   });
+  if (getStats().lists.anime) {
+    const total = (await loadAnimeCatalog().catch(() => [])).filter(entry => entry.frames.length).length;
+    if (total) progress.push({ l: "anime", got: [...ids].filter(id => id >= ANIME_ID_BASE).length, total });
+  }
+  return progress;
 }
 async function renderProfile() {
   const box = $("profileBody");
@@ -4128,7 +4178,7 @@ function readChallengeLink() {
   if (!location.hash.startsWith("#c=")) return false;
   try {
     const d = b64d(location.hash.slice(3));
-    if (!d || !(LISTS[d.l] || d.l === "custom") || !Array.isArray(d.ids) || !Array.isArray(d.p)) throw 0;
+    if (!d || !(isBuiltin(d.l) || LISTS[d.l] || d.l === "custom") || !Array.isArray(d.ids) || !Array.isArray(d.p)) throw 0;
     ch = { ...d, n: String(d.n || "Друг").slice(0, 20), role: "rival" };
   } catch { return false; }
   const total = ch.p.reduce((a, b) => a + b, 0);
@@ -4318,6 +4368,7 @@ $("frame").addEventListener("error", () => {
 // ===== Ссылки на фильм =====
 // IMDb ID есть только у списка IMDb — для остальных тихо догружаем из TMDB
 function ensureImdb(f) {
+  if (f.id >= ANIME_ID_BASE) return;
   if (f.imdb !== null && f.imdb !== undefined) return;
   f.imdb = "";
   tmdb(`/movie/${f.id}/external_ids`).then(e => {
@@ -4327,6 +4378,9 @@ function ensureImdb(f) {
   }).catch(() => {});
 }
 function filmLinks(f) {
+  if (f.id >= ANIME_ID_BASE) {
+    return { anime: { name: "MyAnimeList", url: `https://myanimelist.net/anime/${f.id - ANIME_ID_BASE}` } };
+  }
   const q = encodeURIComponent(`${f.ru} ${f.year}`);
   return {
     kinopoisk: { name: "Кинопоиск", url: `https://www.kinopoisk.ru/index.php?kp_query=${q}` },
