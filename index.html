@@ -224,7 +224,12 @@
   .dc-top { font-size: 14px; }
   .dc-cta { position: absolute; right: 24px; bottom: 26px; background: var(--green); color: #0b1a10; font: 600 15px var(--sans); padding: 10px 20px; border-radius: 4px; }
   .filters { display: grid; gap: 8px; }
-  #lbSettingsForm select { max-width: 100%; font: inherit; }
+  .round-answers { margin: 12px 0; padding: 12px 16px; background: var(--panel); border-radius: 10px; }
+  .round-answers h3 { margin: 0 0 8px; }
+  .round-answers ul { list-style: none; padding: 0; margin: 0; }
+  .round-answers li { display: flex; gap: 8px; justify-content: space-between; padding: 6px 0; overflow-wrap: anywhere; }
+  .round-answers .ok { color: var(--green); }
+  .round-answers .bad { color: var(--red); }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; }
   .chips button { padding: 6px 12px; border-radius: 16px; font-size: 13px; background: var(--panel-2); color: var(--dim); }
   .chips button:hover { color: var(--text); }
@@ -1068,7 +1073,9 @@ The Matrix 1999"></textarea>
         <form id="lbSettingsForm" class="filter-pop hidden" role="dialog" aria-label="Фильтры" onsubmit="saveLobbySettings(event)">
           <div class="fp-head"><b>Фильтры</b><button type="button" class="fp-close" onclick="toggleLobbyFilters(false)" aria-label="Закрыть фильтры">✕</button></div>
           <div class="fp-body">
-            <p><label>Список <select name="list"></select></label></p>
+            <h4>Список</h4>
+            <div id="lbListOptions" class="chips" data-filter="list" role="radiogroup" aria-label="Список"></div>
+            <input type="hidden" name="list">
             <div id="lbFilters"></div>
             <p class="hint" id="lbFilterStatus" role="status"></p>
           </div>
@@ -1102,6 +1109,10 @@ The Matrix 1999"></textarea>
         </div>
         <div class="reel"><div id="oBar" style="width:100%"></div></div>
         <div class="thumbs" id="oThumbs"></div>
+        <section id="oAnswers" class="round-answers hidden" aria-labelledby="oAnswersTitle">
+          <h3 id="oAnswersTitle">Ответы игроков</h3>
+          <ul id="oAnswerList"></ul>
+        </section>
         <div class="options" id="oOptions"></div>
         <div id="oMsg" class="msg" role="status"></div>
       </div>
@@ -2157,7 +2168,8 @@ function passes(f, filters = flt) {
 }
 const pool = () => films.filter(f => passes(f));
 function bindFilterChips(panel, filters, onChange) {
-  panel.querySelectorAll(".chips").forEach(group => {
+  const groups = panel.matches(".chips") ? [panel] : panel.querySelectorAll(".chips");
+  groups.forEach(group => {
     const key = group.dataset.filter;
     const multi = key in FILTER_VALUES;
     group.querySelectorAll("button").forEach(button => {
@@ -3497,8 +3509,18 @@ function renderLobbySettings(meta) {
   const form = $("lbSettingsForm"), filters = roomFilters(meta);
   const lists = ["imdb", "letterboxd", "kinopoisk", "anime"];
   if (!lists.includes(meta.list)) lists.push(meta.list);
-  form.elements.list.replaceChildren(...lists.map(key => new Option(listTitle(key, meta.lname), key)));
-  form.elements.list.value = meta.list;
+  const listOptions = $("lbListOptions");
+  listOptions.replaceChildren(...lists.map(key => {
+    const button = document.createElement("button");
+    button.dataset.v = key;
+    button.textContent = listTitle(key, meta.lname);
+    return button;
+  }));
+  const selection = { list: meta.list };
+  form.elements.list.value = selection.list;
+  bindFilterChips(listOptions, selection, () => {
+    form.elements.list.value = selection.list;
+  });
   $("lbFilters").replaceChildren(...[...$("filterPanel").querySelector(".fp-body").children].map(el => el.cloneNode(true)));
   const hints = $("lbFilters").querySelectorAll(".hint");
   hints[hints.length - 1].textContent = "Стандартное время онлайн — 30 или 20 секунд на кадр.";
@@ -3526,7 +3548,7 @@ function toggleLobbyFilters(open, restoreFocus = true) {
   $("lbSettingsForm").classList.toggle("hidden", !open);
   $("lbFilterBackdrop").classList.toggle("hidden", !open);
   $("lbFilterBtn").setAttribute("aria-expanded", String(open));
-  if (open) $("lbSettingsForm").querySelector("select").focus();
+  if (open) $("lbListOptions").querySelector('[aria-checked="true"]')?.focus();
   else if (wasOpen && restoreFocus) $("lbFilterBtn").focus();
   if (wasOpen !== open && room?.room) renderLobby(room.room);
 }
@@ -3722,6 +3744,8 @@ function clientRound(st, key) {
   $("oFrame").removeAttribute("src");
   st.pics.forEach(p => { new Image().src = FRAME(p); });
   $("oOptions").innerHTML = st.options.map((t, k) => `<button disabled data-k="${k}" onclick="onlineAnswer(${k})">${esc(t)}</button>`).join("");
+  $("oAnswers").classList.add("hidden");
+  $("oAnswerList").replaceChildren();
   $("oRound").innerHTML = (onl.firstTo ? `Раунд ${st.round + 1} · до ${onl.firstTo} побед` : `Раунд ${st.round + 1} из ${onl.rounds}`) + (isDouble(st.round) ? ' · <span class="x2">очки ×2</span>' : "");
   clearInterval(onl.tick);
   onl.tick = setInterval(clientTick, 150);
@@ -3796,6 +3820,14 @@ function clientReveal(r) {
     if (k === rv.correct) b.classList.add("right"); else if (k === onl.myAns) b.classList.add("wrong");
   });
   const ps = playersArr(r), f = rv.film || {}, pts = rv.pts || {}, mine = pts[onl.pid];
+  const answers = r.answers?.[st.round] || {};
+  $("oAnswerList").innerHTML = ps.map(player => {
+    const choice = answers[player.id]?.k;
+    const answer = Number.isInteger(choice) ? st.options?.[choice] : undefined;
+    const correct = answer !== undefined && choice === rv.correct;
+    return `<li><b>${esc(player.name)}</b><span class="${answer === undefined ? "hint" : correct ? "ok" : "bad"}">${answer === undefined ? "Без ответа" : (correct ? "✓ " : "✕ ") + esc(answer)}</span></li>`;
+  }).join("");
+  $("oAnswers").classList.remove("hidden");
   const poster = f.poster ? POSTER(f.poster).replace("/w185", "/w500") : "";
   const gains = ps.filter(p => pts[p.id]).map(p => `<span class="gain" style="--pc:${p.col}">${esc(p.name)} +${pts[p.id]}</span>`).join("") || '<span class="gain none">Никто не угадал</span>';
   $("oCurtain").style.setProperty("--poster", poster ? `url('${poster}')` : "none");
