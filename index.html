@@ -224,9 +224,6 @@
   .dc-top { font-size: 14px; }
   .dc-cta { position: absolute; right: 24px; bottom: 26px; background: var(--green); color: #0b1a10; font: 600 15px var(--sans); padding: 10px 20px; border-radius: 4px; }
   .filters { display: grid; gap: 8px; }
-  #lbSettings summary { cursor: pointer; }
-  #lbFilters fieldset { border: 1px solid var(--line); border-radius: 8px; }
-  #lbFilters label { display: inline-flex; align-items: center; gap: 4px; margin: 4px 12px 4px 0; }
   #lbSettingsForm select { max-width: 100%; font: inherit; }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; }
   .chips button { padding: 6px 12px; border-radius: 16px; font-size: 13px; background: var(--panel-2); color: var(--dim); }
@@ -1059,14 +1056,28 @@ The Matrix 1999"></textarea>
       <h2 class="ls-title">Код комнаты</h2>
       <div class="room-code" id="lbCode"></div>
       <p class="hint" id="lbMeta"></p>
-      <details id="lbSettings" class="hidden" style="margin: 12px 0">
-        <summary>Настройки следующей игры</summary>
-        <form id="lbSettingsForm" onsubmit="saveLobbySettings(event)">
-          <p><label>Список <select name="list"></select></label></p>
-          <div id="lbFilters" class="filters"></div>
-          <p><button class="secondary" type="submit">Применить настройки</button></p>
+      <div id="lbSettings" class="filter-wrap hidden" style="margin:12px 0">
+        <div class="filter-bar">
+          <button type="button" class="filter-btn" id="lbFilterBtn" aria-expanded="false" aria-controls="lbFilterPanel" onclick="toggleLobbyFilters(true)">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4"/></svg>
+            Фильтры
+          </button>
+          <span class="fsummary" id="lbFilterSummary"></span>
+        </div>
+        <div id="lbFilterBackdrop" class="fp-backdrop hidden" onclick="toggleLobbyFilters(false)"></div>
+        <form id="lbSettingsForm" class="filter-pop hidden" role="dialog" aria-label="Фильтры" onsubmit="saveLobbySettings(event)">
+          <div class="fp-head"><b>Фильтры</b><button type="button" class="fp-close" onclick="toggleLobbyFilters(false)" aria-label="Закрыть фильтры">✕</button></div>
+          <div class="fp-body">
+            <p><label>Список <select name="list"></select></label></p>
+            <div id="lbFilters"></div>
+            <p class="hint" id="lbFilterStatus" role="status"></p>
+          </div>
+          <div class="fp-foot">
+            <button class="secondary" type="button" onclick="resetLobbyFilters()">Сбросить</button>
+            <button class="primary" type="submit">Готово</button>
+          </div>
         </form>
-      </details>
+      </div>
       <p id="lbSettingsStatus" class="hint" role="status"></p>
       <div class="ch-link"><input id="lbUrl" readonly onclick="this.select()" aria-label="Ссылка на комнату"><button class="primary" onclick="shareRoom()">Позвать друзей</button></div>
       <h3>Игроки <span id="lbCount" class="hint"></span></h3>
@@ -2145,30 +2156,35 @@ function passes(f, filters = flt) {
   return !filters.genre.length || filters.genre.some(genre => (f.genres || []).includes(GENRES[genre]));
 }
 const pool = () => films.filter(f => passes(f));
-function renderChips() {
-  document.querySelectorAll(".chips").forEach(group => {
+function bindFilterChips(panel, filters, onChange) {
+  panel.querySelectorAll(".chips").forEach(group => {
     const key = group.dataset.filter;
     const multi = key in FILTER_VALUES;
     group.querySelectorAll("button").forEach(button => {
       const value = button.dataset.v;
       button.type = "button";
       if (multi) {
-        const selected = value === "all" ? !flt[key].length : flt[key].includes(value);
+        const selected = value === "all" ? !filters[key].length : filters[key].includes(value);
         button.setAttribute("aria-pressed", String(selected));
       } else {
         button.setAttribute("role", "radio");
-        button.setAttribute("aria-checked", String(flt[key] === value));
+        button.setAttribute("aria-checked", String(filters[key] === value));
       }
       button.onclick = () => {
-        if (!multi) flt[key] = value;
-        else if (value === "all") flt[key] = [];
-        else if (flt[key].includes(value)) flt[key] = flt[key].filter(v => v !== value);
-        else flt[key] = [...flt[key], value];
-        store.set("filters", flt);
-        renderChips();
-        updateFilterInfo();
+        if (!multi) filters[key] = value;
+        else if (value === "all") filters[key] = [];
+        else if (filters[key].includes(value)) filters[key] = filters[key].filter(v => v !== value);
+        else filters[key] = [...filters[key], value];
+        bindFilterChips(panel, filters, onChange);
+        onChange();
       };
     });
+  });
+}
+function renderChips() {
+  bindFilterChips($("filterPanel"), flt, () => {
+    store.set("filters", flt);
+    updateFilterInfo();
   });
 }
 function toggleFilters(open) {
@@ -2184,13 +2200,13 @@ function resetFilters() { flt = readFilters(); store.set("filters", flt); render
 document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("filterPanel").classList.contains("hidden")) toggleFilters(false); });
 function filterLabels(filters) {
   const parts = Object.keys(FILTER_VALUES).filter(key => filters[key].length).map(key => {
-    const labels = [...document.querySelectorAll(`.chips[data-filter="${key}"] button`)]
+    const labels = [...$("filterPanel").querySelectorAll(`.chips[data-filter="${key}"] button`)]
       .filter(button => filters[key].includes(button.dataset.v))
       .map(button => button.textContent).join(", ");
     return key === "diff" ? `Сложность: ${labels.toLowerCase()}` : labels;
   });
   if (filters.time !== "all") {
-    const button = document.querySelector(`.chips[data-filter="time"] button[data-v="${filters.time}"]`);
+    const button = $("filterPanel").querySelector(`.chips[data-filter="time"] button[data-v="${filters.time}"]`);
     parts.push(`${button.textContent} на ответ`);
   }
   return parts;
@@ -3274,6 +3290,7 @@ async function shareRoom() {
 
 // ----- выход -----
 function stopOnline(o) {
+  toggleLobbyFilters(false, false);
   if (!o) return;
   clearInterval(o.tick); clearInterval(o.watch);
   netBar("");
@@ -3482,26 +3499,40 @@ function renderLobbySettings(meta) {
   if (!lists.includes(meta.list)) lists.push(meta.list);
   form.elements.list.replaceChildren(...lists.map(key => new Option(listTitle(key, meta.lname), key)));
   form.elements.list.value = meta.list;
-  $("lbFilters").replaceChildren(...[...$("filterPanel").querySelectorAll(".chips[data-filter]")].map(group => {
-    const key = group.dataset.filter, multi = key !== "time";
-    const field = document.createElement("fieldset");
-    const title = document.createElement("legend");
-    title.textContent = group.getAttribute("aria-label");
-    field.append(title);
-    for (const button of group.querySelectorAll("button[data-v]")) {
-      const value = button.dataset.v;
-      if (multi && value === "all") continue;
-      const label = document.createElement("label"), input = document.createElement("input");
-      input.type = multi ? "checkbox" : "radio";
-      input.name = key;
-      input.value = value;
-      input.checked = multi ? filters[key].includes(value) : filters.time === value;
-      label.append(input, " " + button.textContent);
-      field.append(label);
-    }
-    return field;
-  }));
+  $("lbFilters").replaceChildren(...[...$("filterPanel").querySelector(".fp-body").children].map(el => el.cloneNode(true)));
+  const hints = $("lbFilters").querySelectorAll(".hint");
+  hints[hints.length - 1].textContent = "Стандартное время онлайн — 30 или 20 секунд на кадр.";
+  onl.draftFilters = filters;
+  bindFilterChips($("lbFilters"), filters, () => {});
 }
+function resetLobbyFilters() {
+  if (!onl?.host || onl.settingsSaving) return;
+  onl.draftFilters = readFilters();
+  bindFilterChips($("lbFilters"), onl.draftFilters, () => {});
+  $("lbFilterStatus").textContent = "";
+}
+function lobbyFiltersOpen() {
+  return !$("lbSettingsForm").classList.contains("hidden");
+}
+function toggleLobbyFilters(open, restoreFocus = true) {
+  const room = onl;
+  if (open && (!room?.host || room.starting || room.room?.state.phase !== "lobby")) return;
+  if (!open && restoreFocus && room?.settingsSaving) return;
+  const wasOpen = lobbyFiltersOpen();
+  if (open) {
+    renderLobbySettings(room.room.meta);
+    $("lbFilterStatus").textContent = "";
+  }
+  $("lbSettingsForm").classList.toggle("hidden", !open);
+  $("lbFilterBackdrop").classList.toggle("hidden", !open);
+  $("lbFilterBtn").setAttribute("aria-expanded", String(open));
+  if (open) $("lbSettingsForm").querySelector("select").focus();
+  else if (wasOpen && restoreFocus) $("lbFilterBtn").focus();
+  if (wasOpen !== open && room?.room) renderLobby(room.room);
+}
+document.addEventListener("keydown", event => {
+  if (event.key === "Escape" && lobbyFiltersOpen()) toggleLobbyFilters(false);
+});
 async function buildLobbyPool(list, filters) {
   chosenList = list;
   if (!(await ensureList())) throw new Error("Не удалось загрузить список. Попробуй ещё раз.");
@@ -3516,12 +3547,10 @@ async function saveLobbySettings(event) {
   const values = new FormData(event.currentTarget);
   const list = values.get("list");
   if (!isBuiltin(list) && list !== room.room.meta.list) return;
-  const filters = readFilters({
-    diff: values.getAll("diff"), era: values.getAll("era"),
-    genre: values.getAll("genre"), time: values.get("time"),
-  });
-  const status = $("lbSettingsStatus"), submit = event.currentTarget.querySelector('[type="submit"]');
+  const filters = readFilters(room.draftFilters);
+  const status = $("lbFilterStatus"), submit = event.currentTarget.querySelector('[type="submit"]');
   room.settingsSaving = true;
+  event.currentTarget.querySelector(".fp-body").inert = true;
   submit.disabled = true;
   renderLobby(room.room);
   status.textContent = "Проверяю настройки…";
@@ -3539,20 +3568,17 @@ async function saveLobbySettings(event) {
       "meta/step": step, "meta/reveal": length.reveal,
     }));
     if (onl !== room) return;
-    $("lbSettings").open = false;
-    status.textContent = "Настройки сохранены.";
+    toggleLobbyFilters(false, false);
+    $("lbFilterBtn").focus();
   } catch (error) {
     if (onl === room) status.textContent = error.message || "Не удалось сохранить настройки.";
   } finally {
     room.settingsSaving = false;
+    $("lbSettingsForm").querySelector(".fp-body").inert = false;
     submit.disabled = false;
     if (onl === room) renderLobby(room.room);
   }
 }
-$("lbSettings").addEventListener("toggle", () => {
-  if (onl?.room) renderLobby(onl.room);
-});
-
 function renderLobby(r) {
   const ps = playersArr(r), m = r.meta;
   $("lbKind").textContent = m.kind === "duel" ? "Онлайн-дуэль" : "Онлайн-комната";
@@ -3564,14 +3590,11 @@ function renderLobby(r) {
   const ready = ps.filter(p => !p.off).length >= 2;
   const editable = onl.host && r.state.phase === "lobby";
   $("lbSettings").classList.toggle("hidden", !editable);
-  if (!editable) $("lbSettings").open = false;
-  $("lbSettings").querySelector("summary").style.pointerEvents = onl.starting ? "none" : "";
-  if (editable && onl.settingsRenderedFor !== r.state.game) {
-    onl.settingsRenderedFor = r.state.game;
-    renderLobbySettings(m);
-  }
+  if (!editable && lobbyFiltersOpen()) toggleLobbyFilters(false, false);
+  $("lbFilterBtn").disabled = !!onl.starting;
+  $("lbFilterSummary").textContent = m.flt || "Все фильмы списка";
   $("lbStart").classList.toggle("hidden", !onl.host);
-  $("lbStart").disabled = !ready || !!onl.settingsSaving || !!onl.starting || $("lbSettings").open;
+  $("lbStart").disabled = !ready || !!onl.settingsSaving || !!onl.starting || lobbyFiltersOpen();
   $("lbStart").textContent = ready ? "Начать игру" : "Ждём хотя бы одного игрока";
   const host = ps.find(p => p.id === m.host);
   $("lbWait").textContent = onl.host ? "" : `Ждём, когда ${host ? host.name : "создатель комнаты"} начнёт игру`;
@@ -3589,7 +3612,7 @@ const clearHostTimers = () => { (onl.timers || []).forEach(clearTimeout); onl.ti
 async function hostStartGame() {
   const room = onl, r = room?.room;
   if (!room?.host || r?.state.phase !== "lobby" || room.starting || room.settingsSaving ||
-      $("lbSettings").open || playersArr(r).filter(p => !p.off).length < 2) return;
+      lobbyFiltersOpen() || playersArr(r).filter(p => !p.off).length < 2) return;
   room.starting = true;
   $("lbSettingsStatus").textContent = "";
   renderLobby(r);
@@ -3618,7 +3641,8 @@ async function hostStartGame() {
   }
 }
 async function hostRound(i) {
-  if (!onl) return;
+  const room = onl;
+  if (!room) return;
   clearHostTimers();
   optPool = onl.opts; roundRnd = Math.random;
   let film = null, pics = [];
@@ -3628,8 +3652,8 @@ async function hostRound(i) {
     try {
       pics = shuffle(await framesOf(film, FRAMES)).slice(0, FRAMES);
     } catch (e) {}
+    if (onl !== room) return;
   }
-  if (!onl) return;
   if (!pics.length) return hostFinish();
   const opts = shuffle([film, ...similarFilms(film, OPTIONS - 1)]);
   onl.cur = { film, correct: opts.indexOf(film), round: i };
@@ -3637,7 +3661,7 @@ async function hostRound(i) {
   const startAt = NET.now() + 3200;
   saveHostGame(startAt);
   await NET.update(roomPath(), clean({ state: { phase: "round", game: onl.game, round: i, startAt, pics, options: opts.map(f => `${f.ru} (${f.year})`) } }));
-  scheduleHostDeadline(startAt);
+  if (onl === room) scheduleHostDeadline(startAt);
 }
 function scheduleHostDeadline(startAt) {
   onl.timers.push(setTimeout(hostEndRound, Math.max(0, startAt + onl.T * 1000 - NET.now() + 400)));
@@ -3658,7 +3682,8 @@ function hostCheck(r) {
 }
 async function hostEndRound() {
   if (!onl || !onl.cur || onl.ending) return;
-  onl.ending = true; clearHostTimers();
+  const room = onl;
+  room.ending = true; clearHostTimers();
   const r = onl.room, st = r.state, i = onl.cur.round, T = onl.T * 1000, mult = isDouble(i) ? 2 : 1;
   const ans = (r.answers && r.answers[i]) || {}, pts = {};
   if (onl.kind === "duel") {
@@ -3672,7 +3697,7 @@ async function hostEndRound() {
   const f = onl.cur.film;
   upd.state = clean({ ...st, phase: "reveal", reveal: { correct: onl.cur.correct, pts, film: { id: f.id, ru: f.ru, orig: f.orig || "", year: f.year, poster: f.poster || "", rating: f.rating || 0, imdb: f.imdb || "" } } });
   await NET.update(roomPath(), upd);
-  scheduleNextHostRound(i, Object.values(scores));
+  if (onl === room && !room.finishing) scheduleNextHostRound(i, Object.values(scores));
 }
 function scheduleNextHostRound(i, scores) {
   const done = onl.firstTo ? scores.some(score => score >= onl.firstTo) : i + 1 >= onl.rounds;
@@ -3680,9 +3705,10 @@ function scheduleNextHostRound(i, scores) {
 }
 async function hostFinish() {
   if (!onl) return;
-  onl.finishing = true; clearHostTimers();
+  const room = onl;
+  room.finishing = true; clearHostTimers();
   await NET.update(roomPath(), { state: { phase: "end", game: onl.game, round: -1, endedAt: NET.now() } });
-  onl.finishing = false;
+  room.finishing = false;
 }
 function hostRematch() { $("lbSettingsStatus").textContent = ""; NET.update(roomPath(), { state: { phase: "lobby", game: onl.game, round: -1 } }); }
 
