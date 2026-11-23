@@ -224,12 +224,6 @@
   .dc-top { font-size: 14px; }
   .dc-cta { position: absolute; right: 24px; bottom: 26px; background: var(--green); color: #0b1a10; font: 600 15px var(--sans); padding: 10px 20px; border-radius: 4px; }
   .filters { display: grid; gap: 8px; }
-  .round-answers { margin: 12px 0; padding: 12px 16px; background: var(--panel); border-radius: 10px; }
-  .round-answers h3 { margin: 0 0 8px; }
-  .round-answers ul { list-style: none; padding: 0; margin: 0; }
-  .round-answers li { display: flex; gap: 8px; justify-content: space-between; padding: 6px 0; overflow-wrap: anywhere; }
-  .round-answers .ok { color: var(--green); }
-  .round-answers .bad { color: var(--red); }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; }
   .chips button { padding: 6px 12px; border-radius: 16px; font-size: 13px; background: var(--panel-2); color: var(--dim); }
   .chips button:hover { color: var(--text); }
@@ -536,6 +530,10 @@
   .oboard h3 { margin-top: 0; }
   .oboard .secondary { margin-top: 14px; width: 100%; }
   .ocount { position: absolute; inset: 0; display: grid; place-items: center; font: 700 120px var(--serif); color: #fff; background: rgba(20,24,28,.75); border-radius: 4px; }
+  #oOptions button.has-votes { opacity: 1; }
+  .option-voters { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+  .option-voters span { max-width: 100%; overflow-wrap: anywhere; border-radius: 12px; padding: 2px 8px; background: var(--panel-2); color: var(--text); font: 600 12px var(--sans); }
+  #oOptions .right .option-voters span { background: rgba(0,0,0,.14); color: inherit; }
   #oOptions button.picked { box-shadow: inset 0 0 0 2px var(--blue); opacity: 1; }
   .gains { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
   .gain { font: 600 13px var(--sans); padding: 4px 10px; border-radius: 12px; background: color-mix(in srgb, var(--pc) 22%, transparent); color: #fff; box-shadow: inset 0 0 0 1px var(--pc); }
@@ -1109,11 +1107,8 @@ The Matrix 1999"></textarea>
         </div>
         <div class="reel"><div id="oBar" style="width:100%"></div></div>
         <div class="thumbs" id="oThumbs"></div>
-        <section id="oAnswers" class="round-answers hidden" aria-labelledby="oAnswersTitle">
-          <h3 id="oAnswersTitle">Ответы игроков</h3>
-          <ul id="oAnswerList"></ul>
-        </section>
         <div class="options" id="oOptions"></div>
+        <p class="hint hidden" id="oNoAnswer"></p>
         <div id="oMsg" class="msg" role="status"></div>
       </div>
       <aside class="oboard"><h3>Счёт</h3><ul class="plist compact" id="oBoard"></ul><button class="secondary" onclick="onlineLeave()">Выйти из игры</button></aside>
@@ -3744,8 +3739,8 @@ function clientRound(st, key) {
   $("oFrame").removeAttribute("src");
   st.pics.forEach(p => { new Image().src = FRAME(p); });
   $("oOptions").innerHTML = st.options.map((t, k) => `<button disabled data-k="${k}" onclick="onlineAnswer(${k})">${esc(t)}</button>`).join("");
-  $("oAnswers").classList.add("hidden");
-  $("oAnswerList").replaceChildren();
+  $("oNoAnswer").classList.add("hidden");
+  $("oNoAnswer").textContent = "";
   $("oRound").innerHTML = (onl.firstTo ? `Раунд ${st.round + 1} · до ${onl.firstTo} побед` : `Раунд ${st.round + 1} из ${onl.rounds}`) + (isDouble(st.round) ? ' · <span class="x2">очки ×2</span>' : "");
   clearInterval(onl.tick);
   onl.tick = setInterval(clientTick, 150);
@@ -3814,20 +3809,34 @@ function clientReveal(r) {
   onl.revealKey = key; onl.view = "reveal";
   clearInterval(onl.tick);
   $("oCount").classList.add("hidden");
-  [...$("oOptions").children].forEach(b => {
-    b.disabled = true; const k = +b.dataset.k;
-    b.classList.remove("picked");
-    if (k === rv.correct) b.classList.add("right"); else if (k === onl.myAns) b.classList.add("wrong");
-  });
   const ps = playersArr(r), f = rv.film || {}, pts = rv.pts || {}, mine = pts[onl.pid];
   const answers = r.answers?.[st.round] || {};
-  $("oAnswerList").innerHTML = ps.map(player => {
+  const voters = st.options.map(() => []), unanswered = [];
+  for (const player of ps) {
     const choice = answers[player.id]?.k;
-    const answer = Number.isInteger(choice) ? st.options?.[choice] : undefined;
-    const correct = answer !== undefined && choice === rv.correct;
-    return `<li><b>${esc(player.name)}</b><span class="${answer === undefined ? "hint" : correct ? "ok" : "bad"}">${answer === undefined ? "Без ответа" : (correct ? "✓ " : "✕ ") + esc(answer)}</span></li>`;
-  }).join("");
-  $("oAnswers").classList.remove("hidden");
+    if (Number.isInteger(choice) && voters[choice]) voters[choice].push(player.name);
+    else unanswered.push(player.name);
+  }
+  [...$("oOptions").children].forEach(button => {
+    const choice = +button.dataset.k;
+    button.disabled = true;
+    button.classList.remove("picked");
+    button.classList.toggle("right", choice === rv.correct);
+    button.classList.toggle("wrong", choice !== rv.correct && choice === onl.myAns);
+    const names = voters[choice] || [];
+    if (!names.length) return;
+    const badges = document.createElement("span");
+    badges.className = "option-voters";
+    for (const name of names) {
+      const badge = document.createElement("span");
+      badge.textContent = name;
+      badges.append(badge);
+    }
+    button.classList.add("has-votes");
+    button.append(badges);
+  });
+  $("oNoAnswer").textContent = unanswered.length ? `Без ответа — ${unanswered.join(", ")}` : "";
+  $("oNoAnswer").classList.toggle("hidden", !unanswered.length);
   const poster = f.poster ? POSTER(f.poster).replace("/w185", "/w500") : "";
   const gains = ps.filter(p => pts[p.id]).map(p => `<span class="gain" style="--pc:${p.col}">${esc(p.name)} +${pts[p.id]}</span>`).join("") || '<span class="gain none">Никто не угадал</span>';
   $("oCurtain").style.setProperty("--poster", poster ? `url('${poster}')` : "none");
