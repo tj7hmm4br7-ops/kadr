@@ -224,6 +224,10 @@
   .dc-top { font-size: 14px; }
   .dc-cta { position: absolute; right: 24px; bottom: 26px; background: var(--green); color: #0b1a10; font: 600 15px var(--sans); padding: 10px 20px; border-radius: 4px; }
   .filters { display: grid; gap: 8px; }
+  #lbSettings summary { cursor: pointer; }
+  #lbFilters fieldset { border: 1px solid var(--line); border-radius: 8px; }
+  #lbFilters label { display: inline-flex; align-items: center; gap: 4px; margin: 4px 12px 4px 0; }
+  #lbSettingsForm select { max-width: 100%; font: inherit; }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; }
   .chips button { padding: 6px 12px; border-radius: 16px; font-size: 13px; background: var(--panel-2); color: var(--dim); }
   .chips button:hover { color: var(--text); }
@@ -1055,6 +1059,15 @@ The Matrix 1999"></textarea>
       <h2 class="ls-title">Код комнаты</h2>
       <div class="room-code" id="lbCode"></div>
       <p class="hint" id="lbMeta"></p>
+      <details id="lbSettings" class="hidden" style="margin: 12px 0">
+        <summary>Настройки следующей игры</summary>
+        <form id="lbSettingsForm" onsubmit="saveLobbySettings(event)">
+          <p><label>Список <select name="list"></select></label></p>
+          <div id="lbFilters" class="filters"></div>
+          <p><button class="secondary" type="submit">Применить настройки</button></p>
+        </form>
+      </details>
+      <p id="lbSettingsStatus" class="hint" role="status"></p>
       <div class="ch-link"><input id="lbUrl" readonly onclick="this.select()" aria-label="Ссылка на комнату"><button class="primary" onclick="shareRoom()">Позвать друзей</button></div>
       <h3>Игроки <span id="lbCount" class="hint"></span></h3>
       <ul class="plist" id="lbPlayers"></ul>
@@ -2123,15 +2136,15 @@ function readFilters(saved = {}) {
 }
 let flt = readFilters(store.get("filters") || {});
 const timeFor = base => flt.time === "all" ? base : +flt.time;
-function passes(f) {
-  if (flt.diff.length && !flt.diff.includes(f.tier)) return false;
-  if (flt.era.length && !flt.era.some(era => {
+function passes(f, filters = flt) {
+  if (filters.diff.length && !filters.diff.includes(f.tier)) return false;
+  if (filters.era.length && !filters.era.some(era => {
     const [start, end] = ERAS[era];
     return f.year >= start && f.year <= end;
   })) return false;
-  return !flt.genre.length || flt.genre.some(genre => (f.genres || []).includes(GENRES[genre]));
+  return !filters.genre.length || filters.genre.some(genre => (f.genres || []).includes(GENRES[genre]));
 }
-const pool = () => films.filter(passes);
+const pool = () => films.filter(f => passes(f));
 function renderChips() {
   document.querySelectorAll(".chips").forEach(group => {
     const key = group.dataset.filter;
@@ -2169,17 +2182,21 @@ function toggleFilters(open) {
 }
 function resetFilters() { flt = readFilters(); store.set("filters", flt); renderChips(); updateFilterInfo(); }
 document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("filterPanel").classList.contains("hidden")) toggleFilters(false); });
-function filterSummary() {
-  const parts = Object.keys(FILTER_VALUES).filter(key => flt[key].length).map(key => {
+function filterLabels(filters) {
+  const parts = Object.keys(FILTER_VALUES).filter(key => filters[key].length).map(key => {
     const labels = [...document.querySelectorAll(`.chips[data-filter="${key}"] button`)]
-      .filter(button => flt[key].includes(button.dataset.v))
+      .filter(button => filters[key].includes(button.dataset.v))
       .map(button => button.textContent).join(", ");
     return key === "diff" ? `Сложность: ${labels.toLowerCase()}` : labels;
   });
-  if (flt.time !== "all") {
-    const button = document.querySelector(`.chips[data-filter="time"] button[data-v="${flt.time}"]`);
+  if (filters.time !== "all") {
+    const button = document.querySelector(`.chips[data-filter="time"] button[data-v="${filters.time}"]`);
     parts.push(`${button.textContent} на ответ`);
   }
+  return parts;
+}
+function filterSummary() {
+  const parts = filterLabels(flt);
   $("fCount").textContent = parts.length || "";
   $("fSummary").textContent = parts.length ? parts.join(" · ") : "Все фильмы списка";
 }
@@ -3165,7 +3182,7 @@ async function onlineCreate(kind) {
   const T = timeFor(L.T), step = Math.min(ON_STEP, Math.max(2, Math.round(T / 4)));
   applyRoomCfg({ kind, len: gameLen, rounds: L.n, T, step, reveal: L.reveal });
   await NET.set(`rooms/${code}`, clean({
-    meta: { kind, list: listName, lname: LIST_NAMES[listName] || "", host: PID, max: kind === "duel" ? 2 : 8, created: now, flt: $("fSummary").textContent.split(" · ").filter(x => !x.endsWith("на ответ")).join(" · ") || "Все фильмы списка", len: gameLen, rounds: L.n, T, step, reveal: L.reveal },
+    meta: { kind, list: listName, lname: LIST_NAMES[listName] || "", host: PID, max: kind === "duel" ? 2 : 8, created: now, filterChoices: JSON.stringify(flt), flt: $("fSummary").textContent.split(" · ").filter(x => !x.endsWith("на ответ")).join(" · ") || "Все фильмы списка", len: gameLen, rounds: L.n, T, step, reveal: L.reveal },
     state: { phase: "lobby", game: 0, round: -1 },
     players: { [PID]: { name, joined: now, score: 0 } },
   }));
@@ -3455,6 +3472,87 @@ function onRoom(r) {
   watchRoom();
 }
 
+function roomFilters(meta) {
+  try { return readFilters(JSON.parse(meta.filterChoices || "{}") || {}); }
+  catch { return readFilters(); }
+}
+function renderLobbySettings(meta) {
+  const form = $("lbSettingsForm"), filters = roomFilters(meta);
+  const lists = ["imdb", "letterboxd", "kinopoisk", "anime"];
+  if (!lists.includes(meta.list)) lists.push(meta.list);
+  form.elements.list.replaceChildren(...lists.map(key => new Option(listTitle(key, meta.lname), key)));
+  form.elements.list.value = meta.list;
+  $("lbFilters").replaceChildren(...[...$("filterPanel").querySelectorAll(".chips[data-filter]")].map(group => {
+    const key = group.dataset.filter, multi = key !== "time";
+    const field = document.createElement("fieldset");
+    const title = document.createElement("legend");
+    title.textContent = group.getAttribute("aria-label");
+    field.append(title);
+    for (const button of group.querySelectorAll("button[data-v]")) {
+      const value = button.dataset.v;
+      if (multi && value === "all") continue;
+      const label = document.createElement("label"), input = document.createElement("input");
+      input.type = multi ? "checkbox" : "radio";
+      input.name = key;
+      input.value = value;
+      input.checked = multi ? filters[key].includes(value) : filters.time === value;
+      label.append(input, " " + button.textContent);
+      field.append(label);
+    }
+    return field;
+  }));
+}
+async function buildLobbyPool(list, filters) {
+  chosenList = list;
+  if (!(await ensureList())) throw new Error("Не удалось загрузить список. Попробуй ещё раз.");
+  const selected = films.filter(f => passes(f, filters));
+  if (selected.length < MIN_ONLINE_FILMS) throw new Error(onlinePoolMessage(selected.length));
+  return selected;
+}
+async function saveLobbySettings(event) {
+  event.preventDefault();
+  const room = onl;
+  if (!room?.host || room.room?.state.phase !== "lobby" || room.settingsSaving || room.starting) return;
+  const values = new FormData(event.currentTarget);
+  const list = values.get("list");
+  if (!isBuiltin(list) && list !== room.room.meta.list) return;
+  const filters = readFilters({
+    diff: values.getAll("diff"), era: values.getAll("era"),
+    genre: values.getAll("genre"), time: values.get("time"),
+  });
+  const status = $("lbSettingsStatus"), submit = event.currentTarget.querySelector('[type="submit"]');
+  room.settingsSaving = true;
+  submit.disabled = true;
+  renderLobby(room.room);
+  status.textContent = "Проверяю настройки…";
+  try {
+    const selected = await buildLobbyPool(list, filters);
+    if (onl !== room || room.room.state.phase !== "lobby") return;
+    const len = [room.len, "mid", "short"].find(key => key === "short" || (LENS[key]?.n <= selected.length && LENS[key].n <= room.rounds));
+    const length = LENS[len], T = filters.time === "all" ? length.T : +filters.time;
+    const step = Math.min(ON_STEP, Math.max(2, Math.round(T / 4)));
+    await NET.update(roomPath(), clean({
+      "meta/list": list, "meta/lname": LIST_NAMES[list] || "",
+      "meta/filterChoices": JSON.stringify(filters),
+      "meta/flt": filterLabels({...filters, time: "all"}).join(" · ") || "Все фильмы списка",
+      "meta/len": len, "meta/rounds": length.n, "meta/T": T,
+      "meta/step": step, "meta/reveal": length.reveal,
+    }));
+    if (onl !== room) return;
+    $("lbSettings").open = false;
+    status.textContent = "Настройки сохранены.";
+  } catch (error) {
+    if (onl === room) status.textContent = error.message || "Не удалось сохранить настройки.";
+  } finally {
+    room.settingsSaving = false;
+    submit.disabled = false;
+    if (onl === room) renderLobby(room.room);
+  }
+}
+$("lbSettings").addEventListener("toggle", () => {
+  if (onl?.room) renderLobby(onl.room);
+});
+
 function renderLobby(r) {
   const ps = playersArr(r), m = r.meta;
   $("lbKind").textContent = m.kind === "duel" ? "Онлайн-дуэль" : "Онлайн-комната";
@@ -3464,8 +3562,16 @@ function renderLobby(r) {
   $("lbCount").textContent = `${ps.length} из ${m.max}`;
   setHTML($("lbPlayers"), ps.map(p => `<li class="${p.off ? "off" : ""}">${avatar(p)}<span class="pn">${esc(p.name)}</span>${p.off ? '<small class="nolink">нет связи</small>' : ""}${p.id === m.host ? "<small>создал комнату</small>" : ""}${p.id === onl.pid ? '<small class="you">это ты</small>' : ""}</li>`).join(""));
   const ready = ps.filter(p => !p.off).length >= 2;
+  const editable = onl.host && r.state.phase === "lobby";
+  $("lbSettings").classList.toggle("hidden", !editable);
+  if (!editable) $("lbSettings").open = false;
+  $("lbSettings").querySelector("summary").style.pointerEvents = onl.starting ? "none" : "";
+  if (editable && onl.settingsRenderedFor !== r.state.game) {
+    onl.settingsRenderedFor = r.state.game;
+    renderLobbySettings(m);
+  }
   $("lbStart").classList.toggle("hidden", !onl.host);
-  $("lbStart").disabled = !ready;
+  $("lbStart").disabled = !ready || !!onl.settingsSaving || !!onl.starting || $("lbSettings").open;
   $("lbStart").textContent = ready ? "Начать игру" : "Ждём хотя бы одного игрока";
   const host = ps.find(p => p.id === m.host);
   $("lbWait").textContent = onl.host ? "" : `Ждём, когда ${host ? host.name : "создатель комнаты"} начнёт игру`;
@@ -3481,15 +3587,35 @@ function renderBoard(r) {
 // ----- хозяин комнаты ведёт игру -----
 const clearHostTimers = () => { (onl.timers || []).forEach(clearTimeout); onl.timers = []; };
 async function hostStartGame() {
-  const r = onl.room;
-  if (!r || playersArr(r).length < 2) return;
-  track(onl.kind === "duel" ? "duel_game" : "room_game");
-  if (!(await ensureHostOrder(r))) return;
-  onl.game = (r.state.game || 0) + 1;
-  const upd = { answers: null, judged: null };
-  playersArr(r).forEach(p => { upd[`players/${p.id}/score`] = 0; });
-  await NET.update(roomPath(), upd);
-  hostRound(0);
+  const room = onl, r = room?.room;
+  if (!room?.host || r?.state.phase !== "lobby" || room.starting || room.settingsSaving ||
+      $("lbSettings").open || playersArr(r).filter(p => !p.off).length < 2) return;
+  room.starting = true;
+  $("lbSettingsStatus").textContent = "";
+  renderLobby(r);
+  try {
+    if (r.meta.filterChoices) {
+      const selected = await buildLobbyPool(r.meta.list, roomFilters(r.meta));
+      if (onl !== room || room.room.state.phase !== "lobby") return;
+      room.order = room.len === "short" ? shuffle([...selected]) : progressiveOrder(selected, room.rounds);
+      room.opts = selected.length >= 8 ? selected : films;
+      room.next = 0;
+    } else if (!(await ensureHostOrder(r))) {
+      throw new Error("Не удалось загрузить список.");
+    }
+    if (onl !== room || playersArr(room.room).filter(p => !p.off).length < 2) return;
+    track(room.kind === "duel" ? "duel_game" : "room_game");
+    room.game = (r.state.game || 0) + 1;
+    const upd = { answers: null, judged: null };
+    playersArr(room.room).forEach(p => { upd[`players/${p.id}/score`] = 0; });
+    await NET.update(roomPath(), upd);
+    if (onl === room) await hostRound(0);
+  } catch (error) {
+    if (onl === room) $("lbSettingsStatus").textContent = error.message || "Не удалось начать игру.";
+  } finally {
+    room.starting = false;
+    if (onl === room) renderLobby(room.room);
+  }
 }
 async function hostRound(i) {
   if (!onl) return;
@@ -3558,7 +3684,7 @@ async function hostFinish() {
   await NET.update(roomPath(), { state: { phase: "end", game: onl.game, round: -1, endedAt: NET.now() } });
   onl.finishing = false;
 }
-function hostRematch() { NET.update(roomPath(), { state: { phase: "lobby", game: onl.game, round: -1 } }); }
+function hostRematch() { $("lbSettingsStatus").textContent = ""; NET.update(roomPath(), { state: { phase: "lobby", game: onl.game, round: -1 } }); }
 
 // ----- экран игрока -----
 function clientRound(st, key) {
