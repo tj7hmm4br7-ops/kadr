@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="ru">
 <head>
+<link rel="stylesheet" href="clues.css">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Угадай фильм по кадру</title>
@@ -702,6 +703,11 @@
       <button class="arch-pill" onclick="openArchive()" aria-label="Архив фильмов дня"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="5" rx="1.5"/><path d="M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9M10 13h4"/></svg>Архив <b id="archCount"></b></button>
       </div>
 
+      <button class="start-card clues-card" type="button" onclick="openClues()">
+        <span class="sc-text"><b>По подсказкам</b><small>Угадай фильм за 10 догадок по году, жанру, актёрам и другим подсказкам</small></span>
+        <span class="clues-art" aria-hidden="true"><i class="clues-art-shadow"></i><i class="clues-strip"><i></i><i></i></i><i class="clues-lens"><i></i></i><i class="clues-spark"></i></span>
+      </button>
+
       <button class="start-card solo" onclick="choosePlay('solo')">
         <span class="sc-text">
           <span class="sc-kicker">Для себя</span>
@@ -751,6 +757,26 @@
       </button>
 
     </div>
+  </section>
+
+  <section id="cluesScreen" class="hidden">
+    <button class="back" type="button" onclick="goHome()">← На главную</button>
+    <section class="clues-board panel" aria-labelledby="cluesTitle">
+      <header class="clues-heading"><h2 id="cluesTitle">По подсказкам</h2><span id="cluesCount" aria-label="Использовано догадок">0 / 10</span></header>
+      <form id="cluesForm">
+        <input id="cluesInput" aria-label="Название фильма" placeholder="Введи название фильма" list="cluesTitles" autocomplete="off" required disabled>
+        <datalist id="cluesTitles"></datalist>
+        <button class="primary" type="submit" disabled>Ответить</button>
+      </form>
+      <div class="clues-help">
+        <button id="cluesHint" class="secondary" type="button" disabled>Открыть кадр</button>
+        <span id="cluesHintNote">После пятой догадки</span>
+      </div>
+      <img id="cluesStill" class="hidden" alt="Кадр из загаданного фильма">
+      <p id="cluesStatus" role="status"></p>
+      <div id="cluesHistory"></div>
+      <button id="cluesReplay" class="primary hidden" type="button">Играть ещё</button>
+    </section>
   </section>
 
   <!-- С друзьями: комната или дуэль -->
@@ -1990,7 +2016,7 @@ if (!Object.hasOwn(LENS, soloLen)) soloLen = "short";
 
 const $ = id => document.getElementById(id);
 const show = s => {
-  ["start","friendsHub","setup","myLists","listScreen","stages","game","end","daily","archive","handover","chIntro","achScreen","statsScreen","profile","joinScreen","lobby","online","oend"].forEach(x => $(x).classList.toggle("hidden", x !== s));
+  ["start","cluesScreen","friendsHub","setup","myLists","listScreen","stages","game","end","daily","archive","handover","chIntro","achScreen","statsScreen","profile","joinScreen","lobby","online","oend"].forEach(x => $(x).classList.toggle("hidden", x !== s));
   document.querySelector(".marquee").classList.toggle("compact", s === "game" || s === "daily" || s === "handover" || s === "online");
   if (s === "start") updateAchCount();
   if (s === "setup" || s === "start") { renderDailyCard(); renderTiles(); }
@@ -5110,5 +5136,6 @@ function endGame() {
   show("end");
 }
 </script>
+<script src="clues.js" defer></script>
 </body>
 </html>
