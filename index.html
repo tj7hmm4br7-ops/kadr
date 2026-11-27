@@ -431,7 +431,9 @@
   .fp-close { background: none; color: var(--dim); padding: 4px 8px; font-size: 16px; }
   .fp-body { padding: 4px 18px 14px; max-height: 60vh; overflow-y: auto; }
   .fp-body h4 { margin: 14px 0 8px; font: 600 13px var(--sans); color: var(--dim); }
-  .fp-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--line); }
+  .fp-result { margin-right: auto; color: var(--text); align-self: center; }
+  .fp-result:empty { display: none; }
+  .fp-foot { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--line); }
   @keyframes popIn { from { opacity: 0; transform: translateY(-6px); } }
   @keyframes sheetIn { from { transform: translateY(100%); } }
   @media (max-width: 640px) {
@@ -439,6 +441,7 @@
     .filter-pop { position: fixed; top: auto; left: 0; right: 0; bottom: 0; width: 100%; border-radius: 16px 16px 0 0; animation: sheetIn .22s ease-out; }
     .fp-body { max-height: 58vh; }
     .fp-foot button { flex: 1; }
+    .fp-result { flex-basis: 100%; }
   }
   /* шапка */
   .topnav { display: flex; gap: 6px; }
@@ -869,26 +872,26 @@ The Matrix 1999"></textarea>
       <div class="filter-pop hidden" id="filterPanel" role="dialog" aria-modal="false" aria-label="Фильтры">
         <div class="fp-head"><b>Фильтры</b><button type="button" class="fp-close" onclick="toggleFilters(false)" aria-label="Закрыть фильтры">✕</button></div>
         <div class="fp-body">
-          <h4>Сложность</h4>
-          <p class="hint" style="margin:0 0 8px">Насколько известен фильм: лёгкая — самые популярные в списке, сложная — наименее известные</p>
-          <div class="chips" data-filter="diff" role="group" aria-label="Сложность">
-            <button data-v="all">Любая</button><button data-v="easy">Лёгкая</button><button data-v="mid">Средняя</button><button data-v="hard">Сложная</button>
+          <h4>Жанр</h4>
+          <div class="chips" data-filter="genre" role="group" aria-label="Жанр">
+            <button data-v="all">Любой жанр</button><button data-v="drama">Драма</button><button data-v="comedy">Комедия</button><button data-v="crime">Криминал</button><button data-v="mystery">Триллеры и детективы</button><button data-v="action">Боевики и приключения</button><button data-v="fantasy">Фантастика и фэнтези</button><button data-v="romance">Мелодрамы</button><button data-v="anim">Анимация</button>
           </div>
           <h4>Годы</h4>
           <div class="chips" data-filter="era" role="group" aria-label="Годы">
-        <button data-v="all">Любые годы</button><button data-v="pre70">До 1970</button><button data-v="y70">1970–1999</button><button data-v="y00">2000–2014</button><button data-v="y15">2015 и новее</button>
+            <button data-v="all">Любые годы</button><button data-v="before80">До 1980</button><button data-v="y80">1980–1999</button><button data-v="dec00">2000-е</button><button data-v="dec10">2010-е</button><button data-v="dec20">2020-е</button>
           </div>
-          <h4>Жанр</h4>
-          <div class="chips" data-filter="genre" role="group" aria-label="Жанр">
-        <button data-v="all">Любой жанр</button><button data-v="drama">Драма</button><button data-v="comedy">Комедия</button><button data-v="crime">Криминал</button><button data-v="thriller">Триллер</button><button data-v="scifi">Фантастика</button><button data-v="anim">Анимация</button><button data-v="war">Военный</button>
+          <h4>Сложность</h4>
+          <div class="chips" data-filter="diff" role="group" aria-label="Сложность">
+            <button data-v="all">Любая</button><button data-v="easy">Лёгкая</button><button data-v="mid">Средняя</button><button data-v="hard">Сложная</button>
           </div>
           <h4>Время на ответ</h4>
-          <p class="hint" style="margin:0 0 8px">Сколько секунд даётся на кадр. Стандартное — минута в одиночных режимах, 30 или 20 секунд онлайн</p>
           <div class="chips" data-filter="time" role="radiogroup" aria-label="Время на ответ">
             <button data-v="all">Стандартное</button><button data-v="30">30 секунд</button><button data-v="15">15 секунд</button><button data-v="10">10 секунд</button>
           </div>
         </div>
         <div class="fp-foot">
+          <div class="fp-result" id="fpResult" role="status"></div>
+          <button type="button" class="secondary hidden" id="fpSuggestion"></button>
           <button type="button" class="secondary" onclick="resetFilters()">Сбросить</button>
           <button type="button" class="primary" id="fpApply" onclick="toggleFilters(false)">Готово</button>
         </div>
@@ -1075,6 +1078,8 @@ The Matrix 1999"></textarea>
             <p class="hint" id="lbFilterStatus" role="status"></p>
           </div>
           <div class="fp-foot">
+            <div class="fp-result" id="lbFilterResult" role="status"></div>
+            <button type="button" class="secondary hidden" id="lbFilterSuggestion"></button>
             <button class="secondary" type="button" onclick="resetLobbyFilters()">Сбросить</button>
             <button class="primary" type="submit">Готово</button>
           </div>
@@ -2089,11 +2094,11 @@ let chosenList = store.get("lastList") || "imdb";
 const selectedList = () => chosenList;
 
 // Загружаем список фильмов (по порядку рейтинга)
-async function loadList(name) {
+async function readListFilms(name, progress = () => {}) {
   const list = LISTS[name];
   const loaded = [];
   if (name === "anime") {
-    $("loading").textContent = "Загружаю топ аниме…";
+    progress("Загружаю топ аниме…");
     const anime = await loadAnimeCatalog();
     for (const entry of anime) {
       if (!entry.frames.length) continue;
@@ -2105,18 +2110,23 @@ async function loadList(name) {
     }
   }
   for (let i = 0; list && i < list.length; i += 10) {
-    $("loading").textContent = `Загружаю список… ${Math.min(i+10, list.length)}/${list.length}`;
+    progress(`Загружаю список… ${Math.min(i+10, list.length)}/${list.length}`);
     const batch = await Promise.all(list.slice(i, i + 10).map((x, j) =>
       resolve(x).then(f => f && { ...f, rank: i + j + 1, rating: (RATINGS[name] || [])[i + j] }).catch(() => null)));
     batch.forEach(f => { if (f && !loaded.some(g => g.id === f.id)) loaded.push(f); });
   }
+  [...loaded].sort((a, b) => (b.votes || 0) - (a.votes || 0)).forEach((f, i, arr) => { f.tier = i < arr.length / 3 ? "easy" : i < arr.length * 2 / 3 ? "mid" : "hard"; });
+  return loaded;
+}
+
+async function loadList(name) {
+  const loaded = await readListFilms(name, text => { $("loading").textContent = text; });
   store.set("films6", cache);
   $("loading").textContent = "";
   store.set("posters_" + name, loaded.slice(0, 5).map(f => f.poster).filter(Boolean));
   if (name !== chosenList && films.list) return; // пока грузили, выбрали другой список
   films = loaded; films.list = name;
   // сложность: треть самых известных фильмов списка (по числу оценок) — лёгкие, последняя треть — сложные
-  [...films].sort((a, b) => (b.votes || 0) - (a.votes || 0)).forEach((f, i, arr) => { f.tier = i < arr.length / 3 ? "easy" : i < arr.length * 2 / 3 ? "mid" : "hard"; });
   store.set("posters_" + name, films.slice(0, 5).map(f => f.poster).filter(Boolean));
   // подсказки для режима без вариантов — все названия списка
   const opts = new Set();
@@ -2129,8 +2139,15 @@ async function loadList(name) {
 // Общий ключ сайта: игрокам не нужно ничего вводить
 const DEFAULT_KEY = "966527545daca912624d4852ef276bbc";
 // ===== Фильтры =====
-const ERAS = { all: [0, 9999], pre70: [0, 1969], y70: [1970, 1999], y00: [2000, 2014], y15: [2015, 9999] };
-const GENRES = { all: 0, drama: 18, comedy: 35, crime: 80, thriller: 53, scifi: 878, anim: 16, war: 10752 };
+const ERAS = { before80: [0, 1979], y80: [1980, 1999], dec00: [2000, 2009], dec10: [2010, 2019], dec20: [2020, 2029] };
+const GENRES = { drama: [18], comedy: [35], crime: [80], mystery: [53, 9648], action: [28, 12], fantasy: [878, 14], romance: [10749], anim: [16] };
+// Действующие комнаты сохраняют прежние условия до изменения настроек ведущим.
+const LEGACY_ERAS = { pre70: [0, 1969], y70: [1970, 1999], y00: [2000, 2014], y15: [2015, 9999] };
+const LEGACY_GENRES = { thriller: [53], scifi: [878], war: [10752] };
+const FILTER_REPLACEMENTS = {
+  era: { pre70: ["before80"], y70: ["before80", "y80"], y00: ["dec00", "dec10"], y15: ["dec10", "dec20"] },
+  genre: { thriller: ["mystery"], scifi: ["fantasy"], war: [] },
+};
 // Страну определяем по языку фильма — его TMDB отдаёт для каждого фильма
 const ORIGIN_LANGS = {
   ru: ["ru", "uk", "be", "ka", "hy", "kk", "uz", "az", "lt", "lv", "et"], // советское и российское
@@ -2139,12 +2156,15 @@ const ORIGIN_LANGS = {
 };
 const OUR_LANGS = ORIGIN_LANGS.ru;
 const FILTER_VALUES = { diff: ["easy", "mid", "hard"], era: Object.keys(ERAS), genre: Object.keys(GENRES) };
-function readFilters(saved = {}) {
+function readFilters(saved = {}, preserveLegacy = false) {
   const filters = { time: ["30", "15", "10"].includes(saved.time) ? saved.time : "all" };
   for (const [key, allowed] of Object.entries(FILTER_VALUES)) {
     const value = saved[key];
     const values = Array.isArray(value) ? value : [value];
-    filters[key] = [...new Set(values.filter(v => v !== "all" && allowed.includes(v)))];
+    const legacy = key === "era" ? LEGACY_ERAS : key === "genre" ? LEGACY_GENRES : {};
+    const recognized = preserveLegacy ? [...allowed, ...Object.keys(legacy)] : allowed;
+    const choices = preserveLegacy ? values : values.flatMap(v => Object.hasOwn(FILTER_REPLACEMENTS[key] || {}, v) ? FILTER_REPLACEMENTS[key][v] : [v]);
+    filters[key] = [...new Set(choices.filter(v => recognized.includes(v)))];
   }
   return filters;
 }
@@ -2153,10 +2173,10 @@ const timeFor = base => flt.time === "all" ? base : +flt.time;
 function passes(f, filters = flt) {
   if (filters.diff.length && !filters.diff.includes(f.tier)) return false;
   if (filters.era.length && !filters.era.some(era => {
-    const [start, end] = ERAS[era];
+    const [start, end] = ERAS[era] || LEGACY_ERAS[era];
     return f.year >= start && f.year <= end;
   })) return false;
-  return !filters.genre.length || filters.genre.some(genre => (f.genres || []).includes(GENRES[genre]));
+  return !filters.genre.length || filters.genre.some(genre => (GENRES[genre] || LEGACY_GENRES[genre]).some(id => (f.genres || []).includes(id)));
 }
 const pool = () => films.filter(f => passes(f));
 function bindFilterChips(panel, filters, onChange) {
@@ -2220,17 +2240,40 @@ function filterSummary() {
   $("fCount").textContent = parts.length || "";
   $("fSummary").textContent = parts.length ? parts.join(" · ") : "Все фильмы списка";
 }
+function filterPoolCount(n, total) { return `${n} ${plural(n, "фильм", "фильма", "фильмов")} из ${total}`; }
+function renderFilterSuggestion(button, catalog, filters, count, onChange) {
+  button.classList.add("hidden");
+  button.onclick = null;
+  if (count >= MIN_ONLINE_FILMS) return;
+  const eras = filters.era.length ? Object.keys(ERAS).filter(era => !filters.era.includes(era)) : [];
+  const candidates = eras.map(era => ({
+    name: "Добавить «" + $("filterPanel").querySelector("[data-v=" + era + "]").textContent + "»",
+    key: "era", value: [...filters.era, era],
+  }));
+  if (filters.diff.length) candidates.unshift({ name: "Любая сложность", key: "diff", value: [] });
+  const best = candidates.map(choice => ({
+    ...choice, gain: catalog.filter(f => passes(f, { ...filters, [choice.key]: choice.value })).length - count,
+  })).sort((a, b) => b.gain - a.gain)[0];
+  if (!best || best.gain <= 0) return;
+  button.textContent = best.name + " · +" + best.gain;
+  button.onclick = () => { filters[best.key] = best.value; onChange(); };
+  button.classList.remove("hidden");
+}
 function updateFilterInfo() {
   filterSummary();
   if (typeof renderLen === "function" && $("lenShort")) renderLen();
   const any = Object.keys(FILTER_VALUES).some(key => flt[key].length);
-  $("fpApply").textContent = "Готово";
+  $("fpResult").textContent = "Загружаю список…";
+  $("fpSuggestion").classList.add("hidden");
   if (films.list !== selectedList()) {
     $("filterInfo").textContent = any ? "Сколько фильмов подходит, станет видно после загрузки списка" : "";
     return;
   }
   const n = pool().length;
-  $("fpApply").textContent = any ? (n ? `Показать ${n}` : "Ничего не найдено") : "Готово";
+  $("fpResult").textContent = filterPoolCount(n, films.length);
+  renderFilterSuggestion($("fpSuggestion"), films, flt, n, () => {
+    store.set("filters", flt); renderChips(); updateFilterInfo();
+  });
   $("filterInfo").textContent = any ? (n ? `Под фильтры подходит ${n} из ${films.length} фильмов` : "Под эти фильтры в списке нет фильмов, попробуй ослабить") : "";
 }
 // Открыть список: фильтры и режимы; сам список сразу подгружаем в фоне
@@ -3588,12 +3631,12 @@ function onRoom(r) {
   watchRoom();
 }
 
-function roomFilters(meta) {
-  try { return readFilters(JSON.parse(meta.filterChoices || "{}") || {}); }
+function roomFilters(meta, preserveLegacy = true) {
+  try { return readFilters(JSON.parse(meta.filterChoices || "{}") || {}, preserveLegacy); }
   catch { return readFilters(); }
 }
 function renderLobbySettings(meta) {
-  const form = $("lbSettingsForm"), filters = roomFilters(meta);
+  const form = $("lbSettingsForm"), filters = roomFilters(meta, false);
   const lists = ["imdb", "letterboxd", "kinopoisk", "anime"];
   if (!lists.includes(meta.list)) lists.push(meta.list);
   const listOptions = $("lbListOptions");
@@ -3607,18 +3650,48 @@ function renderLobbySettings(meta) {
   form.elements.list.value = selection.list;
   bindFilterChips(listOptions, selection, () => {
     form.elements.list.value = selection.list;
+    updateLobbyFilterResult();
   });
   $("lbFilters").replaceChildren(...[...$("filterPanel").querySelector(".fp-body").children].map(el => el.cloneNode(true)));
-  const hints = $("lbFilters").querySelectorAll(".hint");
-  hints[hints.length - 1].textContent = "Стандартное время онлайн — 30 или 20 секунд на кадр.";
   onl.draftFilters = filters;
-  bindFilterChips($("lbFilters"), filters, () => {});
+  lobbyFilterCatalogs = new Map();
+  bindFilterChips($("lbFilters"), filters, updateLobbyFilterResult);
+  updateLobbyFilterResult();
+}
+let lobbyFilterCatalogs = new Map();
+let lobbyFilterPreview = 0;
+async function updateLobbyFilterResult() {
+  const request = ++lobbyFilterPreview;
+  const room = onl, list = $("lbSettingsForm").elements.list.value;
+  const output = $("lbFilterResult"), suggestion = $("lbFilterSuggestion");
+  suggestion.classList.add("hidden");
+  $("lbFilterStatus").textContent = "";
+  output.textContent = "Загружаю список…";
+  if (!lobbyFilterCatalogs.has(list)) {
+    const catalogs = lobbyFilterCatalogs;
+    catalogs.set(list, (films.list === list ? Promise.resolve(films) : readListFilms(list))
+      .catch(error => { catalogs.delete(list); throw error; }));
+  }
+  try {
+    const catalog = await lobbyFilterCatalogs.get(list);
+    if (request !== lobbyFilterPreview || room !== onl) return;
+    const playable = lobbyFilmPool(catalog, readFilters());
+    const n = playable.filter(f => passes(f, room.draftFilters)).length;
+    renderFilterSuggestion(suggestion, playable, room.draftFilters, n, () => {
+      bindFilterChips($("lbFilters"), room.draftFilters, updateLobbyFilterResult);
+      updateLobbyFilterResult();
+    });
+    output.textContent = filterPoolCount(n, catalog.length);
+    if (n < MIN_ONLINE_FILMS) $("lbFilterStatus").textContent = `Для онлайн-игры нужно минимум ${MIN_ONLINE_FILMS} фильмов.`;
+  } catch {
+    if (request === lobbyFilterPreview && room === onl) output.textContent = "Не удалось загрузить список";
+  }
 }
 function resetLobbyFilters() {
   if (!onl?.host || onl.settingsSaving) return;
   onl.draftFilters = readFilters();
-  bindFilterChips($("lbFilters"), onl.draftFilters, () => {});
-  $("lbFilterStatus").textContent = "";
+  bindFilterChips($("lbFilters"), onl.draftFilters, updateLobbyFilterResult);
+  updateLobbyFilterResult();
 }
 function lobbyFiltersOpen() {
   return !$("lbSettingsForm").classList.contains("hidden");
@@ -3628,6 +3701,7 @@ function toggleLobbyFilters(open, restoreFocus = true) {
   if (open && (!room?.host || room.starting || room.room?.state.phase !== "lobby")) return;
   if (!open && restoreFocus && room?.settingsSaving) return;
   const wasOpen = lobbyFiltersOpen();
+  if (!open) ++lobbyFilterPreview;
   if (open) {
     renderLobbySettings(room.room.meta);
     $("lbFilterStatus").textContent = "";
@@ -3642,10 +3716,13 @@ function toggleLobbyFilters(open, restoreFocus = true) {
 document.addEventListener("keydown", event => {
   if (event.key === "Escape" && lobbyFiltersOpen()) toggleLobbyFilters(false);
 });
+function lobbyFilmPool(catalog, filters) {
+  return catalog.filter(f => passes(f, filters) && (!Array.isArray(f.frames) || f.frames.length));
+}
 async function buildLobbyPool(list, filters) {
   chosenList = list;
   if (!(await ensureList())) throw new Error("Не удалось загрузить список. Попробуй ещё раз.");
-  const selected = films.filter(f => passes(f, filters) && (!Array.isArray(f.frames) || f.frames.length));
+  const selected = lobbyFilmPool(films, filters);
   if (selected.length < MIN_ONLINE_FILMS) throw new Error(onlinePoolMessage(selected.length));
   return selected;
 }
@@ -3659,6 +3736,8 @@ async function saveLobbySettings(event) {
   const filters = readFilters(room.draftFilters);
   const status = $("lbFilterStatus"), submit = event.currentTarget.querySelector('[type="submit"]');
   room.settingsSaving = true;
+  ++lobbyFilterPreview;
+  $("lbFilterSuggestion").classList.add("hidden");
   event.currentTarget.querySelector(".fp-body").inert = true;
   submit.disabled = true;
   renderLobby(room.room);
