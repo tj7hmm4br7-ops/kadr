@@ -615,7 +615,6 @@
   .lb-join { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
   .lb-join input { flex: 1; min-width: 160px; padding: 11px 12px; border: 0; border-radius: 4px; background: var(--panel-2); color: var(--text); font: 15px var(--sans); }
   /* размытый кадр */
-  .modes button[onclick="startMode('blur')"] { --c: #ff6fa8; }
   #game.blurmode .nav, #game.blurmode .thumbs, #game.blurmode #moreBtn { display: none; }
   .blur-meter { display: none; height: 3px; margin-top: 6px; border-radius: 2px; background: linear-gradient(90deg, #ff6fa8 var(--p, 100%), var(--line) 0); }
   #game.blurmode .blur-meter { display: block; }
@@ -704,7 +703,7 @@
         <span class="sc-text">
           <span class="sc-kicker">Для себя</span>
           <b>Один</b>
-          <small>Быстрая игра, без вариантов, выживание и весь топ-250 по этапам</small>
+          <small>Быстрая игра, без вариантов и выживание</small>
         </span>
         <svg class="sc-art art-solo" viewBox="0 0 200 170" aria-hidden="true">
           <defs>
@@ -936,8 +935,6 @@ The Matrix 1999"></textarea>
       <button onclick="startMode('quick')"><b>Быстрая игра</b><small>10 фильмов, четыре варианта ответа</small></button>
       <button onclick="startMode('text')"><b>Без вариантов</b><small>15 фильмов, название вводишь сам</small></button>
       <button onclick="startMode('survival')"><b>Выживание</b><small>Играешь, пока не ошибёшься</small></button>
-      <button onclick="startMode('blur')"><b>Размытый кадр</b><small>10 фильмов. Кадр проясняется постепенно — чем раньше угадаешь, тем больше звёзд. Ответ один</small></button>
-      <button onclick="startMode('top')"><b>Весь топ-250</b><small>Этапы по 15 фильмов, без фильтров</small></button>
     </div>
     <div id="loading" class="msg" role="status"></div>
     <div id="records" class="msg solo-only"></div>
@@ -2241,8 +2238,6 @@ function openList(name) {
   toggleFilters(false);
   chosenList = name; store.set("lastList", name);
   $("lsTitle").textContent = { imdb: "Топ-250 IMDb", letterboxd: "Топ-250 Letterboxd", kinopoisk: "Топ-250 Кинопоиска", anime: "Топ-250 аниме" }[name] || LIST_NAMES[name];
-  const topBtn = document.querySelector(".modes button[onclick=\"startMode('top')\"] b");
-  if (topBtn) topBtn.textContent = isBuiltin(name) ? "Весь топ-250" : "Весь список";
   $("listScreen").dataset.list = name;
   fillDuelNames();
   const room = document.body.classList.contains("fr-room");
@@ -2259,8 +2254,7 @@ function renderTiles() {
     const posters = store.get("posters_" + l) || [];
     $("lt-" + l).innerHTML = posters.slice(0, 5).map(p => `<i style="background-image:url('${POSTER(p)}')"></i>`).join("");
     const q = store.get(`best_quick_${l}`), sv = store.get(`best_survival_${l}`);
-    const done = [...Array(17).keys()].filter(i => store.get(`stage_${l}_${i}`)).length;
-    $("ltr-" + l).textContent = [q != null ? `рекорд ★ ${q}` : "", sv ? `выживание ${sv}` : "", done ? `этапов ${done}/17` : ""].filter(Boolean).join(" · ");
+    $("ltr-" + l).textContent = [q != null ? `рекорд ★ ${q}` : "", sv ? `выживание ${sv}` : ""].filter(Boolean).join(" · ");
   });
 }
 renderChips();
@@ -2285,14 +2279,12 @@ async function startMode(m) {
   track("g_" + m);
   mode = m;
   answerType = m === "text" ? "text" : "options";
-  if (m === "top") { optPool = films; return showStages(); }
   const p = pool();
   if (!p.length) { $("loading").textContent = "Под эти фильтры в списке нет фильмов, попробуй ослабить"; return; }
   optPool = p.length >= 8 ? p : films; // варианты ответа — из тех же фильтров, если фильмов хватает
   if (m === "quick") beginGame(freshOrder(p, ROUNDS));
   if (m === "text") beginGame(freshOrder(p, TEXT_ROUNDS));
   if (m === "survival") beginGame(freshOrder(p));
-  if (m === "blur") beginGame(freshOrder(p, ROUNDS));
 }
 
 // ===== Без повторов: сайт помнит, какие фильмы уже показывал =====
