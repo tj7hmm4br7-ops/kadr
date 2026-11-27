@@ -4606,21 +4606,41 @@ function similarity(a, b) {
 }
 // Вызовы используют прежний подбор, чтобы оба игрока получили одинаковые варианты.
 const recentDistractors = [];
-function chooseDistractors(ranked, n, recent) {
+function rankDistractors(pool, film) {
+  return pool.filter(candidate => candidate.id !== film.id)
+    .sort((a, b) => a.id - b.id)
+    .map(candidate => ({ film: candidate, score: similarity(film, candidate) }))
+    .sort((a, b) => b.score - a.score || a.film.id - b.film.id)
+    .map(entry => entry.film);
+}
+function chooseDistractors(ranked, n, recent, getFallback) {
   const positions = new Map();
   recent.forEach((ids, index) => ids.forEach(id => positions.set(id, index)));
-  const shuffled = shuffle(ranked, roundRnd);
-  return shuffled.sort((a, b) => (positions.get(a.id) ?? -1) - (positions.get(b.id) ?? -1)).slice(0, n);
+  const shortlist = shuffle(ranked, roundRnd);
+  const choices = shortlist.filter(f => !positions.has(f.id)).slice(0, n);
+  if (choices.length < n) {
+    const used = new Set(choices.map(f => f.id));
+    const wider = getFallback(f => !used.has(f.id) && !positions.has(f.id));
+    choices.push(...shuffle(wider, roundRnd).slice(0, n - choices.length));
+  }
+  if (choices.length < n) {
+    const older = shortlist.filter(f => positions.has(f.id))
+      .sort((a, b) => positions.get(a.id) - positions.get(b.id));
+    choices.push(...older.slice(0, n - choices.length));
+  }
+  return choices;
 }
 function similarFilms(film, n) {
-  const pool = (optPool.length ? optPool : films).filter(f => f.id !== film.id)
-    .sort((a, b) => a.id - b.id)
-    .map(f => ({ f, s: similarity(film, f) }))
-    .sort((x, y) => y.s - x.s || x.f.id - y.f.id);
-  if (mode === "challenge" || (mode === "online" ? onl?.list : listName) === "anime") {
-    return shuffle(pool.slice(0, 5).map(x => x.f), roundRnd).slice(0, n);
+  const pool = optPool.length ? optPool : films;
+  const ranked = rankDistractors(pool, film);
+  const activeList = mode === "online" ? onl?.list : listName;
+  if (mode === "challenge" || activeList === "anime") {
+    return shuffle(ranked.slice(0, 5), roundRnd).slice(0, n);
   }
-  const choices = chooseDistractors(pool.slice(0, 15).map(x => x.f), n, recentDistractors);
+  const choices = chooseDistractors(ranked.slice(0, 15), n, recentDistractors, eligible => {
+    const fullList = films.list === activeList ? films : pool;
+    return rankDistractors(fullList.filter(eligible), film).slice(0, 8);
+  });
   recentDistractors.push(choices.map(f => f.id));
   if (recentDistractors.length > 4) recentDistractors.shift();
   return choices;
