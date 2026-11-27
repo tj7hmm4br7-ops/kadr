@@ -872,6 +872,10 @@ The Matrix 1999"></textarea>
       <div class="filter-pop hidden" id="filterPanel" role="dialog" aria-modal="false" aria-label="Фильтры">
         <div class="fp-head"><b>Фильтры</b><button type="button" class="fp-close" onclick="toggleFilters(false)" aria-label="Закрыть фильтры">✕</button></div>
         <div class="fp-body">
+          <div id="fpListPicker">
+            <h4>Список</h4>
+            <div id="fpListOptions" class="chips" data-filter="list" role="radiogroup" aria-label="Список"></div>
+          </div>
           <h4>Жанр</h4>
           <div class="chips" data-filter="genre" role="group" aria-label="Жанр">
             <button data-v="all">Любой жанр</button><button data-v="drama">Драма</button><button data-v="comedy">Комедия</button><button data-v="crime">Криминал</button><button data-v="mystery">Триллеры и детективы</button><button data-v="action">Боевики и приключения</button><button data-v="fantasy">Фантастика и фэнтези</button><button data-v="romance">Мелодрамы</button><button data-v="anim">Анимация</button>
@@ -2072,7 +2076,9 @@ const stars = n => `<span class="stars">${"★".repeat(n)}<span class="off">${"�
 let lastPts = 0, pending = null, pendingFn = null;
 const WAIT = 5000; // сколько показываем постер перед следующим фильмом
 function goNext() { clearTimeout(pending); const f = pendingFn; pendingFn = null; if (f) f(); }
-const LIST_NAMES = { imdb: "IMDb", letterboxd: "Letterboxd", kinopoisk: "Кинопоиск", anime: "MyAnimeList" };
+const CINEMA_LISTS = ["imdb", "letterboxd", "kinopoisk"];
+const ALL_CINEMA = "all-cinema";
+const LIST_NAMES = { [ALL_CINEMA]: "Все кинотопы", imdb: "IMDb", letterboxd: "Letterboxd", kinopoisk: "Кинопоиск", anime: "MyAnimeList" };
 const ANIME_ID_BASE = 1000000000;
 let animeCatalog;
 function loadAnimeCatalog() {
@@ -2086,15 +2092,30 @@ function loadAnimeCatalog() {
   }
   return animeCatalog;
 }
-const isBuiltin = k => ["imdb", "letterboxd", "kinopoisk", "anime"].includes(k);
+const isBuiltin = k => k === ALL_CINEMA || k === "anime" || CINEMA_LISTS.includes(k);
 // «Топ-250 IMDb» или «Любимое кино Маши» для своего списка
-const listTitle = (k, name) => k === "anime" ? "Топ-250 аниме" : isBuiltin(k) ? `Топ-250 ${LIST_NAMES[k]}` : `«${name || LIST_NAMES[k] || "Свой список"}»`;
+const listTitle = (k, name) => k === ALL_CINEMA ? LIST_NAMES[k] : k === "anime" ? "Топ-250 аниме" : isBuiltin(k) ? `Топ-250 ${LIST_NAMES[k]}` : `«${name || LIST_NAMES[k] || "Свой список"}»`;
 const listShort = (k, name) => isBuiltin(k) ? LIST_NAMES[k] : `«${name || LIST_NAMES[k] || "Свой список"}»`;
 let chosenList = store.get("lastList") || "imdb";
 const selectedList = () => chosenList;
+let entryList = chosenList;
 
 // Загружаем список фильмов (по порядку рейтинга)
 async function readListFilms(name, progress = () => {}) {
+  if (name === ALL_CINEMA) {
+    progress("Объединяю кинотопы…");
+    const catalogs = await Promise.all(CINEMA_LISTS.map(list => readListFilms(list)));
+    const unique = new Map();
+    for (const catalog of catalogs) {
+      for (const film of catalog) {
+        if (!unique.has(film.id)) {
+          const { rank, rating, ...entry } = film;
+          unique.set(film.id, entry);
+        }
+      }
+    }
+    return assignFilmTiers([...unique.values()]);
+  }
   const list = LISTS[name];
   const loaded = [];
   if (name === "anime") {
@@ -2115,8 +2136,11 @@ async function readListFilms(name, progress = () => {}) {
       resolve(x).then(f => f && { ...f, rank: i + j + 1, rating: (RATINGS[name] || [])[i + j] }).catch(() => null)));
     batch.forEach(f => { if (f && !loaded.some(g => g.id === f.id)) loaded.push(f); });
   }
-  [...loaded].sort((a, b) => (b.votes || 0) - (a.votes || 0)).forEach((f, i, arr) => { f.tier = i < arr.length / 3 ? "easy" : i < arr.length * 2 / 3 ? "mid" : "hard"; });
-  return loaded;
+  return assignFilmTiers(loaded);
+}
+function assignFilmTiers(catalog) {
+  [...catalog].sort((a, b) => (b.votes || 0) - (a.votes || 0)).forEach((f, i, arr) => { f.tier = i < arr.length / 3 ? "easy" : i < arr.length * 2 / 3 ? "mid" : "hard"; });
+  return catalog;
 }
 
 async function loadList(name) {
@@ -2124,7 +2148,7 @@ async function loadList(name) {
   store.set("films6", cache);
   $("loading").textContent = "";
   store.set("posters_" + name, loaded.slice(0, 5).map(f => f.poster).filter(Boolean));
-  if (name !== chosenList && films.list) return; // пока грузили, выбрали другой список
+  if (name !== chosenList) return; // пока грузили, выбрали другой список
   films = loaded; films.list = name;
   // сложность: треть самых известных фильмов списка (по числу оценок) — лёгкие, последняя треть — сложные
   store.set("posters_" + name, films.slice(0, 5).map(f => f.poster).filter(Boolean));
@@ -2180,7 +2204,7 @@ function passes(f, filters = flt) {
 }
 const pool = () => films.filter(f => passes(f));
 function bindFilterChips(panel, filters, onChange) {
-  const groups = panel.matches(".chips") ? [panel] : panel.querySelectorAll(".chips");
+  const groups = panel.matches(".chips") ? [panel] : [...panel.querySelectorAll(".chips")].filter(group => Object.hasOwn(filters, group.dataset.filter));
   groups.forEach(group => {
     const key = group.dataset.filter;
     const multi = key in FILTER_VALUES;
@@ -2206,9 +2230,30 @@ function bindFilterChips(panel, filters, onChange) {
   });
 }
 function renderChips() {
-  bindFilterChips($("filterPanel"), flt, () => {
+  bindFilterChips($("filterPanel").querySelector(".fp-body"), flt, () => {
     store.set("filters", flt);
     updateFilterInfo();
+  });
+}
+function renderListOptions(element, lists, selection, name, onChange) {
+  element.replaceChildren(...lists.map(list => {
+    const button = document.createElement("button");
+    button.dataset.v = list;
+    button.textContent = list === ALL_CINEMA || CINEMA_LISTS.includes(list) ? LIST_NAMES[list] : listTitle(list, name);
+    return button;
+  }));
+  bindFilterChips(element, selection, onChange);
+}
+function renderSetupListOptions() {
+  const lists = [ALL_CINEMA, ...CINEMA_LISTS];
+  if (!lists.includes(entryList)) lists.push(entryList);
+  const selection = { list: selectedList() };
+  renderListOptions($("fpListOptions"), lists, selection, LIST_NAMES[entryList], () => {
+    if (selection.list === selectedList()) return;
+    setSetupList(selection.list);
+    showRecords();
+    updateFilterInfo();
+    ensureList();
   });
 }
 function toggleFilters(open) {
@@ -2217,6 +2262,7 @@ function toggleFilters(open) {
   p.classList.toggle("hidden", !willOpen);
   $("fpBackdrop").classList.toggle("hidden", !willOpen);
   $("filterBtn").setAttribute("aria-expanded", String(willOpen));
+  if (willOpen) renderSetupListOptions();
   if (willOpen) { const first = p.querySelector('.chips button[aria-pressed="true"], .chips button[aria-checked="true"]'); if (first) first.focus(); }
   else if (wasOpen) $("filterBtn").focus();
 }
@@ -2279,9 +2325,8 @@ function updateFilterInfo() {
 // Открыть список: фильтры и режимы; сам список сразу подгружаем в фоне
 function openList(name) {
   toggleFilters(false);
-  chosenList = name; store.set("lastList", name);
-  $("lsTitle").textContent = { imdb: "Топ-250 IMDb", letterboxd: "Топ-250 Letterboxd", kinopoisk: "Топ-250 Кинопоиска", anime: "Топ-250 аниме" }[name] || LIST_NAMES[name];
-  $("listScreen").dataset.list = name;
+  entryList = name;
+  setSetupList(name);
   fillDuelNames();
   const room = document.body.classList.contains("fr-room");
   $("lsKind").textContent = room ? "Комната" : "Дуэль";
@@ -2290,6 +2335,12 @@ function openList(name) {
   showRecords(); updateFilterInfo(); renderLen();
   show("listScreen");
   if (films.list !== name) ensureList();
+}
+function setSetupList(name) {
+  chosenList = name;
+  store.set("lastList", name);
+  $("lsTitle").textContent = isBuiltin(name) ? listTitle(name) : LIST_NAMES[name] || listTitle(name);
+  $("listScreen").dataset.list = name;
 }
 // Плашки списков: постеры и рекорды
 function renderTiles() {
@@ -2377,7 +2428,7 @@ function markShownFilm() {
   rememberFirstFrame(history, current.id, current.pics[view]);
   store.set(FIRST_FRAMES_KEY, history);
 }
-const usesSharedFilmHistory = () => ["imdb", "letterboxd", "kinopoisk"].includes(listName)
+const usesSharedFilmHistory = () => (listName === ALL_CINEMA || CINEMA_LISTS.includes(listName))
   && ["quick", "text", "survival"].includes(mode);
 function freshOrder(p, n) {
   const seen = store.get(seenKey()) || [];
@@ -2403,8 +2454,8 @@ function freshOrder(p, n) {
   return n ? candidates.slice(0, n) : candidates;
 }
 function markSeen(film) {
-  if (!film || !LISTS[listName]) return;
-  const cap = usesSharedFilmHistory() ? films.length : Math.max(20, Math.floor(LISTS[listName].length * 0.8));
+  if (!film || (!LISTS[listName] && listName !== ALL_CINEMA)) return;
+  const cap = usesSharedFilmHistory() ? films.length : Math.max(20, Math.floor((LISTS[listName]?.length || films.length) * 0.8));
   const seen = (store.get(seenKey()) || []).filter(id => id !== film.id);
   seen.push(film.id);
   store.set(seenKey(), seen.slice(-cap));
@@ -3056,7 +3107,7 @@ function openStats() {
     const decs = Object.keys(st.decades).map(Number).sort((a, b) => a - b);
     if (decs.length) html += `<div class="stat-sec"><h3>Точность по десятилетиям</h3><p class="hint">Доля угаданных фильмов каждого десятилетия</p>
       ${barsHtml(decs.map(d => { const [g, n] = st.decades[d]; return { lbl: `${d}-е`, v: g / n, txt: `${Math.round(g / n * 100)}%`, tip: `${d}-е: угадано ${g} из ${n}` }; }), "var(--blue)")}</div>`;
-    const ls = ["imdb", "letterboxd", "kinopoisk", "anime"].filter(l => st.lists[l]);
+    const ls = [...CINEMA_LISTS, ALL_CINEMA, "anime"].filter(l => st.lists[l]);
     if (ls.length) html += `<div class="stat-sec"><h3>По спискам</h3>
       ${barsHtml(ls.map(l => { const [g, n] = st.lists[l]; return { lbl: LIST_NAMES[l], v: g / n, txt: `${Math.round(g / n * 100)}%`, tip: `${LIST_NAMES[l]}: угадано ${g} из ${n}` }; }), "var(--green)")}</div>`;
     if (st.daily.played) html += `<div class="stat-sec"><h3>Фильм дня</h3>
@@ -3637,22 +3688,15 @@ function roomFilters(meta, preserveLegacy = true) {
 }
 function renderLobbySettings(meta) {
   const form = $("lbSettingsForm"), filters = roomFilters(meta, false);
-  const lists = ["imdb", "letterboxd", "kinopoisk", "anime"];
+  const lists = [ALL_CINEMA, ...CINEMA_LISTS, "anime"];
   if (!lists.includes(meta.list)) lists.push(meta.list);
-  const listOptions = $("lbListOptions");
-  listOptions.replaceChildren(...lists.map(key => {
-    const button = document.createElement("button");
-    button.dataset.v = key;
-    button.textContent = listTitle(key, meta.lname);
-    return button;
-  }));
   const selection = { list: meta.list };
   form.elements.list.value = selection.list;
-  bindFilterChips(listOptions, selection, () => {
+  renderListOptions($("lbListOptions"), lists, selection, meta.lname, () => {
     form.elements.list.value = selection.list;
     updateLobbyFilterResult();
   });
-  $("lbFilters").replaceChildren(...[...$("filterPanel").querySelector(".fp-body").children].map(el => el.cloneNode(true)));
+  $("lbFilters").replaceChildren(...[...$("filterPanel").querySelector(".fp-body").children].filter(el => el.id !== "fpListPicker").map(el => el.cloneNode(true)));
   onl.draftFilters = filters;
   lobbyFilterCatalogs = new Map();
   bindFilterChips($("lbFilters"), filters, updateLobbyFilterResult);
