@@ -1433,13 +1433,13 @@ const LISTS = {
     ["The Shawshank Redemption", 1994],
     ["The Human Condition I: No Greater Love", 1959],
     ["City of God", 2002],
-    ["Yi Yi", 2000],
+    ["Yi Yi", 2000, "tt0244316"],
     ["The Lord of the Rings: The Return of the King", 2003],
     ["Schindler's List", 1993],
     ["Parasite", 2019],
     ["The Godfather", 1972],
     ["Ikiru", 1952],
-    ["Ran", 1985],
+    ["Ran", 1985, "tt0089881"],
     ["The Good, the Bad and the Ugly", 1966],
     ["La Haine", 1995],
     ["A Brighter Summer Day", 1991],
@@ -1475,13 +1475,13 @@ const LISTS = {
     ["Portrait of a Lady on Fire", 2019],
     ["Sansho the Bailiff", 1954],
     ["Memories of Murder", 2003],
-    ["Close-Up", 1990],
+    ["Close-Up", 1990, "tt0100234"],
     ["Spider-Man: Across the Spider-Verse", 2023],
     ["The Red Shoes", 1948],
     ["Stalker", 1979],
     ["Barry Lyndon", 1975],
     ["Nights of Cabiria", 1957],
-    ["Nobody Knows", 2004],
+    ["Nobody Knows", 2004, "tt0408664"],
     ["The Pianist", 2002],
     ["Red Beard", 1965],
     ["Do the Right Thing", 1989],
@@ -1511,7 +1511,7 @@ const LISTS = {
     ["An Elephant Sitting Still", 2018],
     ["War and Peace", 1965],
     ["Oldboy", 2003],
-    ["A Separation", 2011],
+    ["A Separation", 2011, "tt1832382"],
     ["It's Such a Beautiful Day", 2012],
     ["Rear Window", 1954],
     ["Good Will Hunting", 1997],
@@ -1542,7 +1542,7 @@ const LISTS = {
     ["Late Spring", 1949],
     ["Raise the Red Lantern", 1991],
     ["Dead Poets Society", 1989],
-    ["I'm Still Here", 2024],
+    ["I'm Still Here", 2024, "tt14961016"],
     ["A Special Day", 1977],
     ["The Departed", 2006],
     ["City Lights", 1931],
@@ -1566,7 +1566,7 @@ const LISTS = {
     ["No Country for Old Men", 2007],
     ["Mommy", 2014],
     ["Tampopo", 1985],
-    ["The Celebration", 1998],
+    ["The Celebration", 1998, "tt0154420"],
     ["Psycho", 1960],
     ["The Best of Youth", 2003],
     ["Dog Day Afternoon", 1975],
@@ -1589,7 +1589,7 @@ const LISTS = {
     ["Marty Supreme", 2025],
     ["The Treasure of the Sierra Madre", 1948],
     ["Opening Night", 1977],
-    ["The Sacrifice", 1986],
+    ["The Sacrifice", 1986, "tt0091670"],
     ["Bicycle Thieves", 1948],
     ["The Cremator", 1969],
     ["The Lives of Others", 2006],
@@ -1605,7 +1605,7 @@ const LISTS = {
     ["Evangelion: 3.0+1.0 Thrice Upon a Time", 2021],
     ["Secrets & Lies", 1996],
     ["Chungking Express", 1994],
-    ["Nostalgia", 1983],
+    ["Nostalgia", 1983, "tt0086022"],
     ["Akira", 1988],
     ["The Man Who Shot Liberty Valance", 1962],
     ["8½", 1963],
@@ -1624,11 +1624,11 @@ const LISTS = {
     ["Some Like It Hot", 1959],
     ["La Dolce Vita", 1960],
     ["Who's Afraid of Virginia Woolf?", 1966],
-    ["Look Back", 2024],
+    ["Look Back", 2024, "tt31711040"],
     ["We All Loved Each Other So Much", 1974],
-    ["Jeanne Dielman, 23, quai du Commerce, 1080 Bruxelles", 1975],
+    ["Jeanne Dielman, 23, quai du Commerce, 1080 Bruxelles", 1975, "tt0073198"],
     ["Fail Safe", 1964],
-    ["Ritual", 2000],
+    ["Ritual", 2000, "tt0269856"],
     ["Rififi", 1955],
     ["Ugetsu", 1953],
     ["Modern Times", 1936],
@@ -2291,14 +2291,22 @@ async function startMode(m) {
 // Для каждого списка храним id показанных фильмов (старые в начале). Помним 80% списка,
 // поэтому фильм вернётся, только когда пройдёшь почти весь список
 const seenKey = () => "seen_" + listName;
+const RECENT_FILMS_KEY = "seen_films_recent";
+const usesSharedFilmHistory = () => ["imdb", "letterboxd", "kinopoisk"].includes(listName)
+  && ["quick", "text", "survival"].includes(mode);
 function freshOrder(p, n) {
   const seen = store.get(seenKey()) || [];
   const pos = new Map(seen.map((id, i) => [id, i]));
   const fresh = shuffle(p.filter(f => !pos.has(f.id)));
   // если новых не хватило — добираем те, что видел давнее всего
   const old = p.filter(f => pos.has(f.id)).sort((a, b) => pos.get(a.id) - pos.get(b.id));
-  if (!n) return [...fresh, ...old];
-  return shuffle([...fresh, ...old].slice(0, n));
+  const order = [...fresh, ...old];
+  if (!usesSharedFilmHistory()) return n ? shuffle(order.slice(0, n)) : order;
+  const recent = new Map((store.get(RECENT_FILMS_KEY) || []).map((id, index) => [id, index]));
+  const eligible = order.filter(f => !recent.has(f.id));
+  const deferred = order.filter(f => recent.has(f.id))
+    .sort((a, b) => recent.get(a.id) - recent.get(b.id));
+  return n ? [...eligible, ...deferred].slice(0, n) : [...eligible, ...deferred];
 }
 function markSeen(film) {
   if (!film || !LISTS[listName]) return;
@@ -2306,6 +2314,10 @@ function markSeen(film) {
   const seen = (store.get(seenKey()) || []).filter(id => id !== film.id);
   seen.push(film.id);
   store.set(seenKey(), seen.slice(-cap));
+  if (usesSharedFilmHistory()) {
+    const recent = (store.get(RECENT_FILMS_KEY) || []).filter(id => id !== film.id);
+    store.set(RECENT_FILMS_KEY, [...recent, film.id].slice(-30));
+  }
 }
 const TEXT_ROUNDS = 15;
 
@@ -4515,13 +4527,26 @@ function similarity(a, b) {
   s += Math.max(0, 2 - fame * 2);                                                // одинаково известные — нельзя отсеять «неизвестный»
   return s + roundRnd() * 1.5;
 }
-// Берём 5 самых похожих и выбираем из них случайные 3, чтобы варианты не повторялись
+// Вызовы используют прежний подбор, чтобы оба игрока получили одинаковые варианты.
+const recentDistractors = [];
+function chooseDistractors(ranked, n, recent) {
+  const positions = new Map();
+  recent.forEach((ids, index) => ids.forEach(id => positions.set(id, index)));
+  const shuffled = shuffle(ranked, roundRnd);
+  return shuffled.sort((a, b) => (positions.get(a.id) ?? -1) - (positions.get(b.id) ?? -1)).slice(0, n);
+}
 function similarFilms(film, n) {
   const pool = (optPool.length ? optPool : films).filter(f => f.id !== film.id)
     .sort((a, b) => a.id - b.id)
     .map(f => ({ f, s: similarity(film, f) }))
-    .sort((x, y) => y.s - x.s || x.f.id - y.f.id).slice(0, 5).map(x => x.f);
-  return shuffle(pool, roundRnd).slice(0, n);
+    .sort((x, y) => y.s - x.s || x.f.id - y.f.id);
+  if (mode === "challenge" || (mode === "online" ? onl?.list : listName) === "anime") {
+    return shuffle(pool.slice(0, 5).map(x => x.f), roundRnd).slice(0, n);
+  }
+  const choices = chooseDistractors(pool.slice(0, 15).map(x => x.f), n, recentDistractors);
+  recentDistractors.push(choices.map(f => f.id));
+  if (recentDistractors.length > 4) recentDistractors.shift();
+  return choices;
 }
 
 // 4 варианта: правильный + 3 похожих фильма из списка
