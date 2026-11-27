@@ -4620,8 +4620,7 @@ function chooseDistractors(ranked, n, recent, getFallback) {
   const choices = shortlist.filter(f => !positions.has(f.id)).slice(0, n);
   if (choices.length < n) {
     const used = new Set(choices.map(f => f.id));
-    const wider = getFallback(f => !used.has(f.id) && !positions.has(f.id));
-    choices.push(...shuffle(wider, roundRnd).slice(0, n - choices.length));
+    choices.push(...getFallback(f => !used.has(f.id) && !positions.has(f.id), n - choices.length));
   }
   if (choices.length < n) {
     const older = shortlist.filter(f => positions.has(f.id))
@@ -4637,9 +4636,19 @@ function similarFilms(film, n) {
   if (mode === "challenge" || activeList === "anime") {
     return shuffle(ranked.slice(0, 5), roundRnd).slice(0, n);
   }
-  const choices = chooseDistractors(ranked.slice(0, 15), n, recentDistractors, eligible => {
+  const filters = mode === "online" ? roomFilters(onl.room.meta) : flt;
+  const filtered = ranked.filter(candidate => passes(candidate, filters));
+  const choices = chooseDistractors(filtered.slice(0, 15), n, recentDistractors, (eligible, needed) => {
     const fullList = films.list === activeList ? films : pool;
-    return rankDistractors(fullList.filter(eligible), film).slice(0, 8);
+    const wider = rankDistractors(fullList.filter(eligible), film);
+    const sameEraAndGenre = { ...filters, diff: [] };
+    const sameGenre = { ...sameEraAndGenre, era: [] };
+    const fallbacks = [
+      wider.filter(candidate => passes(candidate, sameEraAndGenre)),
+      wider.filter(candidate => !passes(candidate, sameEraAndGenre) && passes(candidate, sameGenre)),
+      wider.filter(candidate => !passes(candidate, sameGenre)),
+    ];
+    return fallbacks.flatMap(group => shuffle(group.slice(0, 8), roundRnd)).slice(0, needed);
   });
   recentDistractors.push(choices.map(f => f.id));
   if (recentDistractors.length > 4) recentDistractors.shift();
