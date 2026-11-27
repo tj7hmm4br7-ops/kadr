@@ -2313,6 +2313,27 @@ function getFilmQueue() {
 }
 const seenKey = () => "seen_" + listName;
 const RECENT_FILMS_KEY = "seen_films_recent";
+const FIRST_FRAMES_KEY = "film_first_frames";
+function rotateFirstFrame(frames, previous) {
+  const index = frames.findIndex(frame => !previous.includes(frame));
+  if (index < 0) {
+    const oldest = previous.find(frame => frames.includes(frame));
+    if (!oldest) return frames;
+    return [oldest, ...frames.filter(frame => frame !== oldest)];
+  }
+  return [frames[index], ...frames.slice(0, index), ...frames.slice(index + 1)];
+}
+function rememberFirstFrame(history, filmId, frame) {
+  const previous = history[filmId] || [];
+  history[filmId] = [...previous.filter(path => path !== frame), frame].slice(-20);
+}
+function markShownFilm() {
+  shownFilmRound = round;
+  markSeen(current);
+  const history = store.get(FIRST_FRAMES_KEY) || {};
+  rememberFirstFrame(history, current.id, current.pics[view]);
+  store.set(FIRST_FRAMES_KEY, history);
+}
 const usesSharedFilmHistory = () => ["imdb", "letterboxd", "kinopoisk"].includes(listName)
   && ["quick", "text", "survival"].includes(mode);
 function freshOrder(p, n) {
@@ -3454,6 +3475,13 @@ function nextHostOrder(room, pool) {
     : progressiveOrder(fresh, room.rounds);
   return [...shuffled, ...older];
 }
+function hostFirstFrames(room) {
+  if (!room.firstFrames) {
+    const [saved] = store.get(hostGameKey(room)) || [];
+    room.firstFrames = saved?.firstFrames || {};
+  }
+  return room.firstFrames;
+}
 function saveHostGame(startAt = null) {
   const key = hostGameKey(onl);
   const saved = store.get(key) || [];
@@ -3461,6 +3489,7 @@ function saveHostGame(startAt = null) {
     order: onl.order.map(f => f.id), options: onl.opts.map(f => f.id),
     next: onl.next, game: onl.game, startAt, cur: startAt ? onl.cur : null,
     seenFilms: [...hostSeenFilms(onl)],
+    firstFrames: hostFirstFrames(onl),
   };
   store.set(key, [snapshot, ...saved.slice(0, 1)]);
 }
@@ -3736,7 +3765,9 @@ async function hostRound(i) {
     if (onl.next >= onl.order.length) { onl.order = room.list === "anime" ? shuffle([...onl.order]) : nextHostOrder(room, onl.order); onl.next = 0; }
     film = onl.order[onl.next++];
     try {
-      pics = shuffle(await framesOf(film, FRAMES)).slice(0, FRAMES);
+      const frames = shuffle(await framesOf(film, FRAMES));
+      pics = (room.list === "anime" ? frames :
+        rotateFirstFrame(frames, hostFirstFrames(room)[film.id] || [])).slice(0, FRAMES);
     } catch (e) {}
     if (onl !== room) return;
   }
@@ -3749,6 +3780,7 @@ async function hostRound(i) {
     const seen = hostSeenFilms(room);
     seen.delete(film.id);
     seen.add(film.id);
+    rememberFirstFrame(hostFirstFrames(room), film.id, pics[0]);
   }
   saveHostGame(startAt);
   await NET.update(roomPath(), clean({ state: { phase: "round", game: onl.game, round: i, startAt, pics, options: opts.map(f => `${f.ru} (${f.year})`) } }));
@@ -4519,7 +4551,12 @@ async function nextRound() {
     let all = await framesOf(current, FRAMES);
     roundRnd = mode === "challenge" ? seededRnd(ch.s + round * 7919 + 1) : Math.random;
     if (mode === "challenge") all.sort();
-    const pics = shuffle(all, roundRnd).slice(0, FRAMES);
+    let ordered = shuffle(all, roundRnd);
+    if (usesSharedFilmHistory()) {
+      const history = store.get(FIRST_FRAMES_KEY) || {};
+      ordered = rotateFirstFrame(ordered, history[current.id] || []);
+    }
+    const pics = ordered.slice(0, FRAMES);
     if (!pics.length) { round++; return nextRound(); }
     current.pics = pics;
     if (!usesSharedFilmHistory()) markSeen(current);
@@ -4620,8 +4657,7 @@ function renderFrames(viewIdx) {
       $("frame").src = src; $("glow").src = src;
     }, 150);
   } else if (usesSharedFilmHistory() && shownFilmRound !== round && $("frame").complete && $("frame").naturalWidth) {
-    shownFilmRound = round;
-    markSeen(current);
+    markShownFilm();
   }
   view = viewIdx;
   $("prevBtn").disabled = viewIdx <= 0;
@@ -4635,8 +4671,7 @@ $("frame").addEventListener("load", () => {
   $("frame").classList.remove("fading");
   if (!usesSharedFilmHistory() || !current?.pics || $("game").classList.contains("hidden")) return;
   if (shownFilmRound !== round && $("frame").getAttribute("src") === FRAME(current.pics[view])) {
-    shownFilmRound = round;
-    markSeen(current);
+    markShownFilm();
   }
 });
 // кадр не загрузился — выкидываем его; если кадров не осталось, переходим к следующему фильму
