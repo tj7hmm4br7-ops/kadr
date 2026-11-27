@@ -2287,9 +2287,30 @@ async function startMode(m) {
   if (m === "survival") beginGame(freshOrder(p));
 }
 
-// ===== Без повторов: сайт помнит, какие фильмы уже показывал =====
-// Для каждого списка храним id показанных фильмов (старые в начале). Помним 80% списка,
-// поэтому фильм вернётся, только когда пройдёшь почти весь список
+// Очередь кинотопа и история фактически показанных фильмов.
+const filmQueueKey = () => "film_queue_" + listName;
+function getFilmQueue() {
+  const ids = films.filter(f => !Array.isArray(f.frames) || f.frames.length).map(f => f.id);
+  const allowed = new Set(ids);
+  const saved = store.get(filmQueueKey());
+  const seen = new Set(store.get(seenKey()) || []);
+  let pending;
+  if (saved) {
+    const known = new Set(saved.catalog);
+    pending = saved.pending.filter(id => allowed.has(id));
+    pending.push(...shuffle(ids.filter(id => !known.has(id))));
+  } else {
+    pending = shuffle(ids.filter(id => !seen.has(id)));
+  }
+  if (!pending.length) {
+    // Новый проход начинается с фильмов, которые видели давнее всего.
+    const positions = new Map([...seen].map((id, i) => [id, i]));
+    pending = shuffle(ids).sort((a, b) => (positions.get(a) ?? -1) - (positions.get(b) ?? -1));
+  }
+  const queue = { catalog: ids, pending };
+  store.set(filmQueueKey(), queue);
+  return queue;
+}
 const seenKey = () => "seen_" + listName;
 const RECENT_FILMS_KEY = "seen_films_recent";
 const usesSharedFilmHistory = () => ["imdb", "letterboxd", "kinopoisk"].includes(listName)
@@ -2297,33 +2318,49 @@ const usesSharedFilmHistory = () => ["imdb", "letterboxd", "kinopoisk"].includes
 function freshOrder(p, n) {
   const seen = store.get(seenKey()) || [];
   const pos = new Map(seen.map((id, i) => [id, i]));
-  const fresh = shuffle(p.filter(f => !pos.has(f.id)));
-  // если новых не хватило — добираем те, что видел давнее всего
-  const old = p.filter(f => pos.has(f.id)).sort((a, b) => pos.get(a.id) - pos.get(b.id));
-  const order = [...fresh, ...old];
-  if (!usesSharedFilmHistory()) return n ? shuffle(order.slice(0, n)) : order;
+  if (!usesSharedFilmHistory()) {
+    const fresh = shuffle(p.filter(f => !pos.has(f.id)));
+    const old = p.filter(f => pos.has(f.id)).sort((a, b) => pos.get(a.id) - pos.get(b.id));
+    const order = [...fresh, ...old];
+    return n ? shuffle(order.slice(0, n)) : order;
+  }
   const recent = new Map((store.get(RECENT_FILMS_KEY) || []).map((id, index) => [id, index]));
-  const eligible = order.filter(f => !recent.has(f.id));
-  const deferred = order.filter(f => recent.has(f.id))
-    .sort((a, b) => recent.get(a.id) - recent.get(b.id));
-  return n ? [...eligible, ...deferred].slice(0, n) : [...eligible, ...deferred];
+  const queued = new Map(getFilmQueue().pending.map((id, index) => [id, index]));
+  const candidates = p.filter(f => !Array.isArray(f.frames) || f.frames.length);
+  candidates.sort((a, b) => {
+    const aRecent = recent.get(a.id) ?? -1, bRecent = recent.get(b.id) ?? -1;
+    const aQueue = queued.get(a.id) ?? Infinity, bQueue = queued.get(b.id) ?? Infinity;
+    if (Number.isFinite(aQueue) !== Number.isFinite(bQueue)) return aQueue - bQueue;
+    if ((aRecent < 0) !== (bRecent < 0)) return aRecent - bRecent;
+    if (aQueue !== bQueue) return aQueue - bQueue;
+    if (aRecent >= 0) return aRecent - bRecent;
+    return (pos.get(a.id) ?? -1) - (pos.get(b.id) ?? -1);
+  });
+  return n ? candidates.slice(0, n) : candidates;
 }
 function markSeen(film) {
   if (!film || !LISTS[listName]) return;
-  const cap = Math.max(20, Math.floor(LISTS[listName].length * 0.8));
+  const cap = usesSharedFilmHistory() ? films.length : Math.max(20, Math.floor(LISTS[listName].length * 0.8));
   const seen = (store.get(seenKey()) || []).filter(id => id !== film.id);
   seen.push(film.id);
   store.set(seenKey(), seen.slice(-cap));
   if (usesSharedFilmHistory()) {
+    const queue = store.get(filmQueueKey());
+    if (queue?.pending.includes(film.id)) {
+      queue.pending = queue.pending.filter(id => id !== film.id);
+      store.set(filmQueueKey(), queue);
+    }
     const recent = (store.get(RECENT_FILMS_KEY) || []).filter(id => id !== film.id);
     store.set(RECENT_FILMS_KEY, [...recent, film.id].slice(-30));
   }
 }
 const TEXT_ROUNDS = 15;
+let shownFilmRound = -1;
 
 function beginGame(order) {
   if (mode !== "challenge") { roundTime = timeFor(TIME); revealWait = WAIT; }
   round = 0; score = 0; results = [];
+  shownFilmRound = -1;
   films.order = order;
   show("game");
   nextRound();
@@ -3676,6 +3713,9 @@ async function hostStartGame() {
     track(room.kind === "duel" ? "duel_game" : "room_game");
     room.game = (r.state.game || 0) + 1;
     const upd = { answers: null, judged: null };
+    if (room.kind === "room" && room.list !== "anime") {
+      upd["meta/rounds"] = Math.min(LENS[room.len].n, room.order.length);
+    }
     playersArr(room.room).forEach(p => { upd[`players/${p.id}/score`] = 0; });
     await NET.update(roomPath(), upd);
     if (onl === room) await hostRound(0);
@@ -4482,7 +4522,7 @@ async function nextRound() {
     const pics = shuffle(all, roundRnd).slice(0, FRAMES);
     if (!pics.length) { round++; return nextRound(); }
     current.pics = pics;
-    markSeen(current);
+    if (!usesSharedFilmHistory()) markSeen(current);
     ensureImdb(current);
     if (current.poster) new Image().src = POSTER(current.poster).replace("/w185", "/w500"); // заранее грузим постер, показываем после ответа
   } catch (e) { $("msg").textContent = e.message; return; }
@@ -4573,8 +4613,15 @@ function renderOptions() {
 function renderFrames(viewIdx) {
   const src = FRAME(current.pics[viewIdx]);
   if ($("frame").getAttribute("src") !== src) {
+    const film = current;
     $("frame").classList.add("fading");
-    setTimeout(() => { $("frame").src = src; $("glow").src = src; }, 150);
+    setTimeout(() => {
+      if (current !== film || view !== viewIdx || $("game").classList.contains("hidden")) return;
+      $("frame").src = src; $("glow").src = src;
+    }, 150);
+  } else if (usesSharedFilmHistory() && shownFilmRound !== round && $("frame").complete && $("frame").naturalWidth) {
+    shownFilmRound = round;
+    markSeen(current);
   }
   view = viewIdx;
   $("prevBtn").disabled = viewIdx <= 0;
@@ -4584,7 +4631,14 @@ function renderFrames(viewIdx) {
     `<span class="${i===viewIdx?'active':''} ${i>attempt?'locked':''}" onclick="${i<=attempt?`renderFrames(${i})`:''}">Кадр ${i+1}</span>`
   ).join("");
 }
-$("frame").addEventListener("load", () => $("frame").classList.remove("fading"));
+$("frame").addEventListener("load", () => {
+  $("frame").classList.remove("fading");
+  if (!usesSharedFilmHistory() || !current?.pics || $("game").classList.contains("hidden")) return;
+  if (shownFilmRound !== round && $("frame").getAttribute("src") === FRAME(current.pics[view])) {
+    shownFilmRound = round;
+    markSeen(current);
+  }
+});
 // кадр не загрузился — выкидываем его; если кадров не осталось, переходим к следующему фильму
 $("frame").addEventListener("error", () => {
   if (!current || !current.pics || roundOver) return;
