@@ -3384,12 +3384,34 @@ function watchRoom() {
 function hostGameKey(room) {
   return `hostGame:${room.code}:${room.pid}`;
 }
+function hostSeenFilms(room) {
+  if (!room.seenFilms) {
+    const [saved] = store.get(hostGameKey(room)) || [];
+    room.seenFilms = new Set(saved?.seenFilms || (saved?.cur ? [saved.cur.film.id] : []));
+  }
+  return room.seenFilms;
+}
+function nextHostOrder(room, pool) {
+  if (room.list === "anime") {
+    return room.len === "short" ? shuffle([...pool]) : progressiveOrder(pool, room.rounds);
+  }
+  const seen = hostSeenFilms(room);
+  const fresh = pool.filter(film => !seen.has(film.id));
+  const positions = new Map([...seen].map((id, index) => [id, index]));
+  const older = pool.filter(film => seen.has(film.id))
+    .sort((a, b) => positions.get(a.id) - positions.get(b.id));
+  const shuffled = room.len === "short" || fresh.length < room.rounds
+    ? shuffle(fresh)
+    : progressiveOrder(fresh, room.rounds);
+  return [...shuffled, ...older];
+}
 function saveHostGame(startAt = null) {
   const key = hostGameKey(onl);
   const saved = store.get(key) || [];
   const snapshot = {
     order: onl.order.map(f => f.id), options: onl.opts.map(f => f.id),
     next: onl.next, game: onl.game, startAt, cur: startAt ? onl.cur : null,
+    seenFilms: [...hostSeenFilms(onl)],
   };
   store.set(key, [snapshot, ...saved.slice(0, 1)]);
 }
@@ -3545,7 +3567,7 @@ document.addEventListener("keydown", event => {
 async function buildLobbyPool(list, filters) {
   chosenList = list;
   if (!(await ensureList())) throw new Error("Не удалось загрузить список. Попробуй ещё раз.");
-  const selected = films.filter(f => passes(f, filters));
+  const selected = films.filter(f => passes(f, filters) && (!Array.isArray(f.frames) || f.frames.length));
   if (selected.length < MIN_ONLINE_FILMS) throw new Error(onlinePoolMessage(selected.length));
   return selected;
 }
@@ -3629,11 +3651,14 @@ async function hostStartGame() {
     if (r.meta.filterChoices) {
       const selected = await buildLobbyPool(r.meta.list, roomFilters(r.meta));
       if (onl !== room || room.room.state.phase !== "lobby") return;
-      room.order = room.len === "short" ? shuffle([...selected]) : progressiveOrder(selected, room.rounds);
+      room.order = nextHostOrder(room, selected);
       room.opts = selected.length >= 8 ? selected : films;
       room.next = 0;
-    } else if (!(await ensureHostOrder(r))) {
-      throw new Error("Не удалось загрузить список.");
+    } else {
+      if (!(await ensureHostOrder(r))) throw new Error("Не удалось загрузить список.");
+      if (onl !== room) return;
+      room.order = nextHostOrder(room, room.order);
+      room.next = 0;
     }
     if (onl !== room || playersArr(room.room).filter(p => !p.off).length < 2) return;
     track(room.kind === "duel" ? "duel_game" : "room_game");
@@ -3656,7 +3681,7 @@ async function hostRound(i) {
   optPool = onl.opts; roundRnd = Math.random;
   let film = null, pics = [];
   for (let k = 0; k < 6 && !pics.length; k++) {
-    if (onl.next >= onl.order.length) { onl.order = shuffle([...onl.order]); onl.next = 0; }
+    if (onl.next >= onl.order.length) { onl.order = room.list === "anime" ? shuffle([...onl.order]) : nextHostOrder(room, onl.order); onl.next = 0; }
     film = onl.order[onl.next++];
     try {
       pics = shuffle(await framesOf(film, FRAMES)).slice(0, FRAMES);
@@ -3668,6 +3693,11 @@ async function hostRound(i) {
   onl.cur = { film, correct: opts.indexOf(film), round: i };
   onl.ending = false;
   const startAt = NET.now() + 3200;
+  if (room.list !== "anime") {
+    const seen = hostSeenFilms(room);
+    seen.delete(film.id);
+    seen.add(film.id);
+  }
   saveHostGame(startAt);
   await NET.update(roomPath(), clean({ state: { phase: "round", game: onl.game, round: i, startAt, pics, options: opts.map(f => `${f.ru} (${f.year})`) } }));
   if (onl === room) scheduleHostDeadline(startAt);
